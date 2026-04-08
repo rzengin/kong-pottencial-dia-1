@@ -1,0 +1,52 @@
+name: Kong APIOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  apiops-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+
+      - name: Install Inso CLI
+        run: npm install -g insomnia-inso
+
+      - name: Install decK CLI
+        run: |
+          curl -sL https://github.com/Kong/deck/releases/download/v1.38.0/deck_1.38.0_linux_amd64.tar.gz -o deck.tar.gz
+          tar -xf deck.tar.gz -C /tmp
+          sudo cp /tmp/deck /usr/local/bin/
+
+      - name: Lint OpenAPI Spec
+        run: inso lint spec "workshop-assets/insomnia/flights-api.yaml"
+
+      - name: Generate Kong Declarative Config (openapi2kong)
+        run: deck file openapi2kong -s workshop-assets/insomnia/flights-api.yaml -o kong-generated.yaml
+
+      - name: Diff Kong Gateway Configuration
+        run: deck gateway diff kong-generated.yaml
+        env:
+          DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+
+      - name: Run Integration Tests
+        run: inso run test "Bateria Pruebas Escenario 08" -e "Base Environment" -w workshop-assets/insomnia/Insomnia_Workspace.json
+
+      # Se ejecuta el Apply únicamente si las validaciones y los tests en entorno Staging pasan exitosamente
+      - name: Apply Kong Gateway Configuration (Production)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: deck gateway apply kong-generated.yaml
+        env:
+          DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}

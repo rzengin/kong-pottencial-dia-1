@@ -237,6 +237,45 @@ Você visualizará um belo relatório no terminal onde os três testes validam o
 
 ---
 
+### Exercício 09: APIOps (O ciclo de vida da API Automatizado)
+**O que queremos mostrar:** Demonstrar como as equipes de Platform Engineering e DevOps podem automatizar o ciclo de vida completo de uma API usando design *Contract-First* e testes CI/CD através do ecossistema Kong (`inso` + `decK`).
+
+**Como fazer:**
+1. No seu terminal (Mac/Linux), abra a pasta deste repositório.
+2. Execute o emulador de Integração Contínua que preparamos para o workshop:
+   ```bash
+   ./workshop-assets/emulador-ci.sh
+   ```
+3. Observe a saída no console. Você verá como o pipeline executa de forma totalmente autônoma as 5 fases críticas do DevOps de APIs:
+   - **Fase 1:** Linting da especificação técnica OpenAPI.
+   - **Fase 2:** Conversão automática do design (`.yaml`) para infraestrutura declarativa real (`decK`).
+   - **Fase 3:** Linting da infraestrutura gerada.
+   - **Fase 4:** Detecção de desvios (Drift Detection / Diff) vs Produção.
+   - **Fase 5:** Execução dos Testes Unitários do Exercício 08 usando `inso run test`.
+4. Mostre à audiência o arquivo `workshop-assets/github-actions-demo.yml` para evidenciar como este script emulador se traduz exatamente em componentes reais do Github Actions prontos para uso.
+
+---
+
+### Exercício 10: Clustering, Escalabilidade e Autodescoberta
+**O que queremos mostrar:** Demonstrar a robustez e imutabilidade da Infraestrutura do Kong. Vamos lançar um novo Data Plane (nó) simulando um evento de "Auto-Scaling" (escalonamento por alto tráfego) e provaremos que ele obtém sua configuração automaticamente e herda toda a observabilidade do Control Plane sem intervenção manual.
+
+**Como fazer:**
+1. Abra um terminal e lance o **segundo Data Plane** (que se conectará ao mesmo cluster na nuvem, mas em uma porta de destino diferente `8010` para não conflitar com o nó local original):
+   ```bash
+   ./workshop-assets/dp2.sh
+   ```
+   *(Este comando usará os mesmos certificados mTLS, mas criará um contêiner chamado `kong_local_dp2`).*
+2. **Teste a Replicação Base:** Envie uma solicitação testando a nova porta `8010`:
+   ```bash
+   curl -i http://localhost:8010/flights
+   ```
+   Você receberá um erro `401 Unauthorized`. Ele herdou imediatamente as regras de segurança sem que você tocasse em um único arquivo de configuração!
+3. **Teste de Observabilidade:** 
+   - Acesse o **Jaeger** (http://localhost:16686). Busque por traces recentes. Você verá que as requisições para a porta `8010` já enviaram seus traces OpenTelemetry.
+   - Acesse o **Grafana** -> **Explore** -> **Loki** (http://localhost:3000). Busque por `{job="kong-gateway"}` e você verá novos logs JSON emitidos pelo seu novo nó secundário.
+
+---
+
 ## 3. Encerramento e Revisão no Konnect Analytics
 Acesse **Kong Konnect -> Analytics -> Explorer**. 
 Filtre pelos últimos 15 ou 30 minutos e você poderá observar todo o tráfego gerado de maneira agregada:
