@@ -48,16 +48,13 @@ echo -e "\n[FASE 4] -> deck gateway diff (Plan de Despliegue)..."
 # Compara el archivo generado con el estado actual del Control Plane en Konnect.
 # Muestra exactamente qué se crearía, actualizaría o eliminaría si se hiciera el apply.
 
-if [ -z "$KONNECT_TOKEN" ] || [ -z "$CONTROL_PLANE_NAME" ]; then
-  echo "  ⚠️  Variables KONNECT_TOKEN o CONTROL_PLANE_NAME no definidas."
-  echo "     Exporta las variables y vuelve a ejecutar para ver el diff real."
+if [ ! -f "$ASSETS_DIR/.deck.yaml" ]; then
+  echo "  ⚠️  No se encontró $ASSETS_DIR/.deck.yaml"
+  echo "     Ejecuta: bash 00-setup/generate-deck-config.sh"
 else
-  deck gateway diff "$GENERATED_FILE" \
-    --konnect-token "$KONNECT_TOKEN" \
-    --konnect-control-plane-name "$CONTROL_PLANE_NAME" 2>&1
+  deck gateway diff "$GENERATED_FILE" 2>&1
   DIFF_EXIT=$?
   if [ $DIFF_EXIT -eq 0 ] || [ $DIFF_EXIT -eq 2 ]; then
-    # exit 0 = sin diferencias; exit 2 = hay diferencias detectadas (ambos son OK para el pipeline)
     echo "  ✅ Drift Detection completado — revisa el plan de cambios arriba."
   else
     echo "  ❌ Error al ejecutar el diff (exit $DIFF_EXIT)"

@@ -1,0 +1,21 @@
+# Kong Konnect — decK Configuration
+# =============================================================================
+# Este archivo es leído automáticamente por el CLI `deck` cuando se ejecuta
+# desde el directorio workshop-assets/.
+#
+# GENERACIÓN AUTOMÁTICA (Ejercicio 0):
+#   bash 00-setup/generate-deck-config.sh
+#
+# IMPORTANTE: Este archivo contiene credenciales — NO lo commits al repositorio.
+#             Ya está incluido en .gitignore.
+# =============================================================================
+
+konnect-token: "REEMPLAZAR_CON_KONNECT_TOKEN"
+konnect-control-plane-name: "REEMPLAZAR_CON_NOMBRE_DEL_CONTROL_PLANE"
+konnect-addr: "https://us.api.konghq.com"
+
+# Deshabilitar telemetría anónima hacia Kong
+analytics: false
+
+# Timeout de conexión en segundos (aumentado desde 10s default para entornos de demo)
+timeout: 30

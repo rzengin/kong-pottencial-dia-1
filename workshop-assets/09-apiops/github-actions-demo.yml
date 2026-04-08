@@ -11,6 +11,12 @@ on:
 jobs:
   apiops-pipeline:
     runs-on: ubuntu-latest
+    # Equivalente al .deck.yaml local: todas las llamadas a 'deck' usan estos valores
+    env:
+      DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+      DECK_KONNECT_CONTROL_PLANE_NAME: ${{ secrets.KONNECT_CP_NAME }}
+      DECK_KONNECT_ADDR: "https://us.api.konghq.com"
+      DECK_ANALYTICS: "false"
 
     steps:
       - name: Checkout Code
@@ -46,8 +52,6 @@ jobs:
       # FASE 4 — Drift Detection: ver qué cambiaría en el Control Plane
       - name: "[FASE 4] Diff Kong Gateway Configuration"
         run: deck gateway diff kong-generated.yaml
-        env:
-          DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
 
       # FASE 5 — Tests de comportamiento sobre el entorno activo
       - name: "[FASE 5] Run Integration Tests"
@@ -57,8 +61,6 @@ jobs:
       - name: "Apply Kong Gateway Configuration (Production)"
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: deck gateway apply kong-generated.yaml
-        env:
-          DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
 
       # FASE 6 — API Catalog: registrar/actualizar la spec en Konnect Service Hub
       - name: "[FASE 6] Publish to Konnect API Catalog"

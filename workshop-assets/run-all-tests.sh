@@ -6,6 +6,11 @@ PASS=0
 FAIL=0
 WAIT=20  # segundos a esperar sincronización Konnect → DP
 
+if [ ! -f ".deck.yaml" ]; then
+  echo "❌ .deck.yaml no encontrado. Ejecuta: bash 00-setup/generate-deck-config.sh"
+  exit 1
+fi
+
 ok()   { echo "  ✅ $1"; ((PASS++)); }
 fail() { echo "  ❌ $1 (esperado: $2, obtenido: $3)"; ((FAIL++)); }
 
@@ -21,9 +26,7 @@ apply() {
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "📦 $1"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  deck gateway apply "$2" \
-    --konnect-token "$KONNECT_TOKEN" \
-    --konnect-control-plane-name "$CONTROL_PLANE_NAME" 2>&1 | grep -E "creating|updating|deleting|Summary"
+  deck gateway apply "$2" 2>&1 | grep -E "creating|updating|deleting|Summary"
   echo "⏳ Aguardando sincronização (${WAIT}s)..."
   sleep $WAIT
 }
