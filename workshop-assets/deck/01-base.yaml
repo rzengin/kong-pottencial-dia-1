@@ -1,0 +1,29 @@
+_format_version: "3.0"
+services:
+  - name: flights
+    url: http://host.docker.internal:8080/flights
+    routes:
+      - name: flights-route
+        paths:
+          - /flights
+  - name: routes
+    url: http://host.docker.internal:8080/routes
+    routes:
+      - name: routes-route
+        paths:
+          - /routes
+  - name: customers
+    url: http://host.docker.internal:8080/customers
+    routes:
+      - name: customers-route
+        paths:
+          - /customers
+  - name: bookings
+    url: http://host.docker.internal:8080/bookings
+    routes:
+      - name: bookings-route
+        paths:
+          - /bookings
+
+
+

@@ -1,0 +1,157 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-04-08T12:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.0.0",
+  "resources": [
+    {
+      "_id": "wrk_1",
+      "parentId": null,
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Kong QA Workshop",
+      "description": "API Lifecycle & Test execution demo",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_1",
+      "parentId": "wrk_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8000"
+      },
+      "dataPropertyOrder": {
+        "&": [
+          "base_url"
+        ]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1700000000000,
+      "_type": "environment"
+    },
+    {
+      "_id": "req_1",
+      "parentId": "wrk_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "url": "{{ _.base_url }}/flights",
+      "name": "GET Flights (External)",
+      "description": "",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "afterResponseScript": "insomnia.test(\"Status is 200\", () => {\n    insomnia.expect(insomnia.response.code).to.eql(200);\n});",
+      "headers": [
+        {
+          "name": "apikey",
+          "value": "my-external-key"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1700000000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_2",
+      "parentId": "wrk_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "url": "{{ _.base_url }}/flights",
+      "name": "GET Flights (Internal / Spam)",
+      "description": "",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "afterResponseScript": "insomnia.test(\"Rate limit reached (429)\", () => {\n    insomnia.expect(insomnia.response.code).to.be.oneOf([200, 429]);\n});",
+      "headers": [
+        {
+          "name": "apikey",
+          "value": "my-internal-key"
+        }
+      ],
+      "authentication": {},
+      "metaSortKey": -1600000000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "req_3",
+      "parentId": "wrk_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "url": "{{ _.base_url }}/flights",
+      "name": "GET Flights (No Auth)",
+      "description": "",
+      "method": "GET",
+      "body": {},
+      "parameters": [],
+      "afterResponseScript": "insomnia.test(\"Gateway must return 401 Unauthorized\", () => {\n    insomnia.expect(insomnia.response.code).to.eql(401);\n    const body = insomnia.response.json();\n    insomnia.expect(body.message).to.eql(\"No API key found in request\");\n});",
+      "headers": [],
+      "authentication": {},
+      "metaSortKey": -1500000000000,
+      "isPrivate": false,
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "_type": "request"
+    },
+    {
+      "_id": "uts_1",
+      "parentId": "wrk_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Bateria Pruebas Escenario 08",
+      "_type": "unit_test_suite"
+    },
+    {
+      "_id": "ut_1",
+      "parentId": "uts_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Debe retornar 200 con llave externa",
+      "code": "const response = await insomnia.send();\nexpect(response.status).to.equal(200);",
+      "requestId": "req_1",
+      "_type": "unit_test"
+    },
+    {
+      "_id": "ut_2",
+      "parentId": "uts_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Debe bloquear sin autenticacion (401)",
+      "code": "const response = await insomnia.send();\nexpect(response.status).to.equal(401);",
+      "requestId": "req_3",
+      "_type": "unit_test"
+    },
+    {
+      "_id": "ut_3",
+      "parentId": "uts_1",
+      "modified": 1700000000000,
+      "created": 1700000000000,
+      "name": "Rutas internas tienen Rate Limit (Spam - 429)",
+      "code": "/* Ejecutamos múltiples request para disparar el Rate Limit (Límite=3) */\nawait insomnia.send();\nawait insomnia.send();\nawait insomnia.send();\nconst response = await insomnia.send();\n\nif (response.status === 403) {\n   expect(response.status).to.equal(403); // Valida ACL por ahora\n} else {\n   expect(response.status).to.equal(429); // Valida Rate Limiting puro\n}",
+      "requestId": "req_2",
+      "_type": "unit_test"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+_format_version: "3.0"
+plugins:
+  # 1. Almacenamiento en File Systems (Archivos Locales)
+  - name: file-log
+    config:
+      path: /tmp/kong-access.log
+
+  # 2. Métricas Externas
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+  # 3. Trazas Externas (Ej. Jaeger a través de OTLP)
+  - name: opentelemetry
+    config:
+      traces_endpoint: http://host.docker.internal:4318/v1/traces
+      sampling_rate: 1.0
+      resource_attributes:
+        service.name: kong-api-gateway
+        os.name: linux
+
+
+services:
+  - name: kong-metrics
+    url: http://127.0.0.1:8100/metrics
+    routes:
+      - name: kong-metrics-route
+        paths:
+          - /metrics

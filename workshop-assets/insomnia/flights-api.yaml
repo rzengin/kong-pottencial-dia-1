@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: Flights API (QA Demo)
+  description: API for managing flights, bookings, and customers. Used for Kong API Gateway workshop.
+  version: 1.0.0
+  contact:
+    name: Workshop QA Team
+    email: qa@example.com
+servers:
+  - url: http://localhost:8080
+    description: Local Mock Server
+tags:
+  - name: Flights
+  - name: Customers
+  - name: Bookings
+  - name: Routes
+paths:
+  /flights:
+    get:
+      tags:
+        - Flights
+      operationId: getFlights
+      summary: Get all flights
+      description: Returns a complete list of flights available in the system.
+      responses:
+        '200':
+          description: A list of flights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: FL-123
+                  destination: "São Paulo"
+                  price: 250
+                  currency: "BRL"
+                - id: FL-456
+                  destination: "New York"
+                  price: 800
+                  currency: "USD"
+    post:
+      tags:
+        - Flights
+      operationId: createFlight
+      summary: Create a flight
+      description: Provisions a new flight in the scheduling system.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        required: true
+      responses:
+        '201':
+          description: Flight created
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                message: "Flight successfully created"
+                id: FL-789
+  /customers:
+    get:
+      tags:
+        - Customers
+      operationId: getCustomers
+      summary: Get customers
+      description: Returns a list of registered customers.
+      responses:
+        '200':
+          # ERROR DELIBERADO: En OpenAPI 3, la propiedad "description" en los objetos de respuesta es OBLIGATORIA. 
+          # Borramos la descripción de aquí para dejar este único error rojo sencillo para que lo resuelvan los alumnos (QA).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: CUST-01
+                  name: "Alice M."
+                - id: CUST-02
+                  name: "Bob T."
+  /bookings:
+    get:
+      tags:
+        - Bookings
+      operationId: getBookings
+      summary: Get bookings
+      description: Returns a list of active flight bookings.
+      responses:
+        '200':
+          description: A list of bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - id: BOOK-99
+                  flight_id: FL-123
+                  customer_id: CUST-01
+  /routes:
+    get:
+      tags:
+        - Routes
+      operationId: getRoutes
+      summary: Get routes
+      description: Returns a list of valid flight routes.
+      responses:
+        '200':
+          description: A list of airplane routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+              example:
+                - source: "GRU"
+                  destination: "JFK"
