@@ -165,23 +165,42 @@ Bateria Pruebas Escenario 08
 **Script:** `09-apiops/emulador-ci.sh`  
 **GitHub Actions equivalente:** `09-apiops/github-actions-demo.yml`
 
+#### Pipeline — 7 Fases
+
+| Fase | Herramienta | Propósito |
+|------|-------------|-----------|
+| FASE 1 | `inso lint spec` | Design-First QA — valida el contrato OpenAPI antes de tocar la infra |
+| FASE 2 | `deck file openapi2kong` | Specs-to-Kong — compila el diseño a configuración declarativa |
+| FASE 3 | `deck file validate` | Valida la estructura y tipos del YAML de Kong generado (offline, sin conexión a Konnect) |
+| FASE 4 | `deck gateway diff` | Drift Detection — qué cambiaría en producción si se aplicara la config |
+| FASE 5 | `inso run test` | Testes de comportamiento sobre el gateway activo |
+| FASE 6 ★ | Konnect API Catalog | Publica la spec OpenAPI en el catálogo interno de la organización |
+| FASE 7 ★ | Konnect Dev Portal | Publica la API para consumidores externos con auto-registro |
+
+> ★ Las fases 6 y 7 requieren `KONNECT_TOKEN` y un Dev Portal activo en `cloud.konghq.com/portals`.
+
+#### Salida del Pipeline (ejecución de validación)
+
 ```
 [FASE 1] inso lint spec → ⚠️  Error intencional en la spec (narrativa de QA)
-[FASE 2] deck file openapi2kong → ✅ Generado
-[FASE 3] deck file validate → ✅ Válido
-[FASE 4] deck gateway diff → ✅ Plan sin errores
+[FASE 2] deck file openapi2kong → ✅ Generado en /tmp/kong-generated-devops.yaml
+[FASE 3] deck file validate → ✅ Estructura del YAML válida
+[FASE 4] deck gateway diff → ✅ Plan sin errores bloqueantes
 [FASE 5] inso run test → ✅ 3 passing
+[FASE 6] Konnect API Catalog → ✅ API Product creado + spec publicada
+[FASE 7] Konnect Dev Portal → ✅ Publicada (o sin Dev Portal activo → aviso orientativo)
 
-🎉 PIPELINE COMPLETADO EXITOSAMENTE
+🎉 PIPELINE COMPLETADO EXITOSAMENTE. LISTO PARA PRODUCCIÓN
 ```
 
 | Check | Resultado |
 |---|---|
-| Pipeline APIOps 5 fases ejecutado | ✅ Completado |
+| Pipeline APIOps 7 fases ejecutado | ✅ Completado |
 
 > **Nota pedagógica:** El error de lint en Fase 1 es intencional — la spec tiene una respuesta `200` en `/customers` sin el campo `description` requerido. El participante lo identifica y corrige como ejercicio de _Design-First QA_.
 
 ---
+
 
 ### ✅ Escenario 10 — Clustering / Segundo Data Plane
 **Script:** `10-clustering/dp2.sh`  

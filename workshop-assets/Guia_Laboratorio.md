@@ -251,12 +251,20 @@ Visualizarás un hermoso reporte en la terminal donde las tres pruebas validan e
    ```bash
    ./09-apiops/emulador-ci.sh
    ```
-3. Observa la salida en la consola. Verás cómo el pipeline ejecuta de forma totalmente autónoma las 5 fases críticas del DevOps de APIs:
-   - **Fase 1:** Linting de la especificación técnica OpenAPI.
-   - **Fase 2:** Conversión automática del diseño (`.yaml`) a infraestructura declarativa real (`decK`).
-   - **Fase 3:** Linting de la infraestructura.
-   - **Fase 4:** Detección de derivas (Drift Detection / Diff) vs Producción.
-   - **Fase 5:** Ejecución de los Tests Unitarios del Ejercicio 08 usando `inso run test`.
+3. Observa la salida en la consola. El pipeline ejecuta de forma totalmente autónoma las **7 fases** del ciclo DevOps de APIs:
+
+   | Fase | Herramienta | Propósito |
+   |------|-------------|-----------|
+   | FASE 1 | `inso lint spec` | Design-First QA — valida el contrato OpenAPI antes de tocar la infra |
+   | FASE 2 | `deck file openapi2kong` | Specs-to-Kong — compila el diseño a configuración declarativa |
+   | FASE 3 | `deck file validate` | Valida el YAML de infraestructura generado |
+   | FASE 4 | `deck gateway diff` | Drift Detection — qué cambiaría en producción |
+   | FASE 5 | `inso run test` | Testes de comportamiento sobre el gateway activo |
+   | FASE 6 ★ | Konnect API Catalog | Publica la spec OpenAPI en el catálogo interno de la organización |
+   | FASE 7 ★ | Konnect Dev Portal | Publica la API para consumidores externos con auto-registro |
+
+   > ★ Las fases 6 y 7 requieren `KONNECT_TOKEN` y un Dev Portal activo en `cloud.konghq.com/portals`.
+
 4. Muestra a la audiencia el archivo `workshop-assets/09-apiops/github-actions-demo.yml` para evidenciar cómo este script emulador se transcribe exactamente igual en componentes reales de Github Actions listos para usarse.
 
 ---
