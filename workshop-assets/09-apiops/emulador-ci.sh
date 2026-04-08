@@ -44,10 +44,24 @@ deck file validate /tmp/kong-generated-devops.yaml
 # FASE 4: DRIFT DETECTION & PLAN (Dry-Run)
 # ----------------------------------------------------
 echo -e "\n[FASE 4] -> deck gateway diff (Plan de Despliegue)..."
-# Muestra qué cambiaría en el Control Plane si empujamos esto. 
-# (Nota: Omitimos la conexión a Konnect aquí para no requerir Tokens en el script local, 
-# pero en CI/CD real este paso evita sobrescribir reglas incorrectas).
-echo "✅ Plan validado. No hay errores de formato bloqueantes."
+# Compara el archivo generado con el estado actual del Control Plane en Konnect.
+# Muestra exactamente qué se crearía, actualizaría o eliminaría si se hiciera el apply.
+
+if [ -z "$KONNECT_TOKEN" ] || [ -z "$CONTROL_PLANE_NAME" ]; then
+  echo "  ⚠️  Variables KONNECT_TOKEN o CONTROL_PLANE_NAME no definidas."
+  echo "     Exporta las variables y vuelve a ejecutar para ver el diff real."
+else
+  deck gateway diff /tmp/kong-generated-devops.yaml \
+    --konnect-token "$KONNECT_TOKEN" \
+    --konnect-control-plane-name "$CONTROL_PLANE_NAME" 2>&1
+  DIFF_EXIT=$?
+  if [ $DIFF_EXIT -eq 0 ] || [ $DIFF_EXIT -eq 2 ]; then
+    # exit 0 = sin diferencias; exit 2 = hay diferencias detectadas (ambos son OK para el pipeline)
+    echo "  ✅ Drift Detection completado — revisa el plan de cambios arriba."
+  else
+    echo "  ❌ Error al ejecutar el diff (exit $DIFF_EXIT)"
+  fi
+fi
 
 # ----------------------------------------------------
 # FASE 5: TESTING DE COMPORTAMIENTO
