@@ -132,32 +132,32 @@ encoded = base64.b64encode(content).decode('utf-8')
 print(json.dumps({'name': 'flights-api.yaml', 'content': encoded}))
 ")
 
-# Endpoint: /specifications (plural) — POST para crear, PATCH para actualizar
-SPEC_RESP=$(curl -s -o /tmp/spec_resp.json -w "%{http_code}" \
-  -X POST "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
-  -H "Authorization: Bearer $KONNECT_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "$SPEC_PAYLOAD")
+# Buscar si ya existe una spec para esta versión (la API no admite más de una)
+SPEC_ID=$(curl -s "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
+  -H "Authorization: Bearer $KONNECT_TOKEN" | \
+  python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(d[0]['id'] if d else '')" 2>/dev/null)
 
-if [ "$SPEC_RESP" = "409" ]; then
-  # Spec ya existe — obtener su ID y actualizarla
-  SPEC_ID=$(cat /tmp/spec_resp.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-  if [ -z "$SPEC_ID" ]; then
-    SPEC_ID=$(curl -s "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
-      -H "Authorization: Bearer $KONNECT_TOKEN" | \
-      python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(d[0]['id'] if d else '')" 2>/dev/null)
-  fi
+if [ -n "$SPEC_ID" ]; then
+  # Spec ya existe → actualizarla con PATCH
   SPEC_RESP=$(curl -s -o /tmp/spec_resp.json -w "%{http_code}" \
     -X PATCH "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications/$SPEC_ID" \
     -H "Authorization: Bearer $KONNECT_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$SPEC_PAYLOAD")
   echo "  ✅ Especificación OpenAPI actualizada en el catálogo (HTTP $SPEC_RESP)"
-elif [ "$SPEC_RESP" = "201" ] || [ "$SPEC_RESP" = "200" ]; then
-  echo "  ✅ Especificación OpenAPI publicada en el catálogo (HTTP $SPEC_RESP)"
 else
-  echo "  ⚠️  Respuesta inesperada al publicar spec: HTTP $SPEC_RESP"
-  python3 -c "import json; f=open('/tmp/spec_resp.json'); print(json.dumps(json.load(f), indent=2))" 2>/dev/null
+  # No existe → crearla con POST
+  SPEC_RESP=$(curl -s -o /tmp/spec_resp.json -w "%{http_code}" \
+    -X POST "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
+    -H "Authorization: Bearer $KONNECT_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$SPEC_PAYLOAD")
+  if [ "$SPEC_RESP" = "201" ] || [ "$SPEC_RESP" = "200" ]; then
+    echo "  ✅ Especificación OpenAPI publicada en el catálogo (HTTP $SPEC_RESP)"
+  else
+    echo "  ⚠️  Error al publicar spec: HTTP $SPEC_RESP"
+    python3 -c "import json; f=open('/tmp/spec_resp.json'); print(json.dumps(json.load(f), indent=2))" 2>/dev/null
+  fi
 fi
 
 # ----------------------------------------------------
