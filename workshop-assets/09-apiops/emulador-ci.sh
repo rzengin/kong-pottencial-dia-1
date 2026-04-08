@@ -4,6 +4,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ASSETS_DIR="$(dirname "$SCRIPT_DIR")"   # workshop-assets/
 INSOMNIA_DIR="$ASSETS_DIR/insomnia"
+GENERATED_FILE="$SCRIPT_DIR/kong-generated.yaml"  # dentro del proyecto
 
 # =========================================================================
 # KONG APIOPS PIPELINE EMULATOR
@@ -31,14 +32,14 @@ fi
 # ----------------------------------------------------
 echo -e "\n[FASE 2] -> deck file openapi2kong (Compilando a Declarativo)..."
 # Traducimos automáticamente el contrato a la configuración nativa del Gateway
-deck file openapi2kong -s "$INSOMNIA_DIR/flights-api.yaml" > /tmp/kong-generated-devops.yaml
-echo "✅ Configuración de Gateway generada exitosamente en /tmp/kong-generated-devops.yaml"
+deck file openapi2kong -s "$INSOMNIA_DIR/flights-api.yaml" > "$GENERATED_FILE"
+echo "✅ Configuración de Gateway generada en $GENERATED_FILE"
 
 # ----------------------------------------------------
 # FASE 3: LINTING DE LA INFRAESTRUCTURA GENERADA
 # ----------------------------------------------------
 echo -e "\n[FASE 3] -> deck file validate (Verificando Infraestructura)..."
-deck file validate /tmp/kong-generated-devops.yaml
+deck file validate "$GENERATED_FILE"
 
 # ----------------------------------------------------
 # FASE 4: DRIFT DETECTION & PLAN (Dry-Run)
@@ -51,7 +52,7 @@ if [ -z "$KONNECT_TOKEN" ] || [ -z "$CONTROL_PLANE_NAME" ]; then
   echo "  ⚠️  Variables KONNECT_TOKEN o CONTROL_PLANE_NAME no definidas."
   echo "     Exporta las variables y vuelve a ejecutar para ver el diff real."
 else
-  deck gateway diff /tmp/kong-generated-devops.yaml \
+  deck gateway diff "$GENERATED_FILE" \
     --konnect-token "$KONNECT_TOKEN" \
     --konnect-control-plane-name "$CONTROL_PLANE_NAME" 2>&1
   DIFF_EXIT=$?
