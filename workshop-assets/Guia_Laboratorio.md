@@ -50,7 +50,7 @@ docker run -d --platform linux/amd64 --name prism_mock -p 8080:4010 -v $(pwd)/wo
 
 ## 2. Ejecución del Laboratorio con `deck`
 
-A continuación gestionaremos las políticas aplicando los archivos ubicados en la carpeta `deck/`.
+A continuación gestionaremos las políticas aplicando los archivos `kong.yaml` ubicados dentro de cada carpeta de escenario.
 
 *Nota: Asegúrate de mantener activas en tu sesión de terminal las variables exportadas `KONNECT_TOKEN` y `CONTROL_PLANE_NAME` definidas en el paso de validación.*
 
@@ -58,16 +58,22 @@ A continuación gestionaremos las políticas aplicando los archivos ubicados en 
 **Qué queremos lograr:** Asegurarnos de que el Control Plane esté en un estado completamente en blanco, eliminando cualquier configuración previa, e iniciar la infraestructura de observabilidad necesaria para el laboratorio.
 
 **Cómo se hace:**
-Primero, levantamos los contenedores del stack LGTM (Grafana, Jaeger, Prometheus, Loki):
+Primero, levantamos los contenedores del stack LGTM (Grafana, Jaeger, Prometheus, Loki) y el servidor mock de backend (Prism):
 ```bash
-cd workshop-assets/observabilidad
-docker compose up -d
+# Stack de observabilidad
+cd workshop-assets/observabilidad && docker compose up -d && cd ..
+
+# Backend mock (Prism) en puerto 8080
+docker rm -f prism_mock 2>/dev/null || true
+docker run -d --platform linux/amd64 --name prism_mock -p 8080:4010 \
+  -v $(pwd)/insomnia/flights-api.yaml:/tmp/flights-api.yaml \
+  stoplight/prism:5 mock -h 0.0.0.0 /tmp/flights-api.yaml -m false
 ```
 
 Luego, limpiamos el entorno de Konnect y establecemos la base de observabilidad (escenario 0):
 ```bash
 deck gateway reset --force --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
-deck gateway apply deck/00-observabilidad.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 00-setup/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
@@ -78,12 +84,12 @@ curl -i http://localhost:8000/
 ```
 
 ### Ejercicio 1: Base de Enrutamiento y Observabilidad (01-base.yaml)
-**Qué queremos mostrar:** La creación de rutas directas hacia un backend interno (`httpbin`), encapsulando la red local y exponiéndola de forma segura, al mismo tiempo que habilitamos globalmente la observabilidad (Métricas, Trazas, Logs) que registrará silenciosamente toda nuestra actividad.
+**Qué queremos mostrar:** La creación de rutas directas hacia el backend mock (Prism), encapsulando la red local y exponiéndola de forma segura, al mismo tiempo que los plugins globales de observabilidad registran silenciosamente toda la actividad.
 
 **Cómo se hace:**
 ```bash
 deck gateway ping --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
-deck gateway apply deck/01-base.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 01-base/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación y Generación de Tráfico):**
@@ -99,7 +105,7 @@ for i in {1..20}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://local
 
 **Cómo se hace:**
 ```bash
-deck gateway apply deck/02-metodos.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 02-metodos/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
@@ -116,7 +122,7 @@ curl -i -X POST http://localhost:8000/flights
 
 **Cómo se hace:**
 ```bash
-deck gateway apply deck/03-seguridad-auth.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 03-seguridad-auth/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
@@ -135,7 +141,7 @@ curl -i http://localhost:8000/flights -H "apikey: my-external-key"
 
 **Cómo se hace:**
 ```bash
-deck gateway apply deck/04-seguridad-acl.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 04-seguridad-acl/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
@@ -150,26 +156,26 @@ curl -i http://localhost:8000/flights -H "apikey: my-internal-key"
 ```
 
 ### Ejercicio 5: Rate Limiting diferenciado (05-rate-limiting.yaml)
-**Qué queremos mostrar:** Proteger el backend de abuso y crear diferentes perfiles de consumo, por ejemplo asignando menos cuota al tráfico interno y más al externo.
+**Qué queremos mostrar:** Proteger el backend de abuso con cuotas diferenciadas por consumidor: el usuario externo tiene un límite de 5 requests/minuto (demostrable), el interno de 3 (pero adicionalmente bloqueado por ACL al intentar acceder a `/flights`).
 
 **Cómo se hace:**
 ```bash
-deck gateway apply deck/05-rate-limiting.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 05-rate-limiting/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
-Ejecuta el siguiente ciclo para el consumidor interno (que tiene el límite bajo de 3 requets/minuto):
+Ejecuta el siguiente ciclo para el consumidor **externo** (límite de 5 requests/minuto):
 ```bash
-for i in {1..5}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://localhost:8000/flights -H "apikey: my-internal-key"; done
+for i in {1..7}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://localhost:8000/flights -H "apikey: my-external-key"; done
 ```
-*Verás que después del tercer request, los códigos cambian de 403 a 429 Too Many Requests.*
+*Observarás que los primeros 5 requests devuelven `200 OK` y a partir del 6º cambian a `429 Too Many Requests`.*
 
 ### Ejercicio 6: Transformaciones y Observabilidad (06-transformaciones.yaml)
 **Qué queremos mostrar:** Enriquecer las peticiones hacia el backend y las respuestas al cliente alterando cabeceras al vuelo, e inyectar un ID de Correlación para facilitar el troubleshooting moderno.
 
 **Cómo se hace:**
 ```bash
-deck gateway apply deck/06-transformaciones.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 06-transformaciones/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
 ```
 
 **Impacto (Validación):**
@@ -243,7 +249,7 @@ Visualizarás un hermoso reporte en la terminal donde las tres pruebas validan e
 1. En tu terminal (Mac/Linux), abre la carpeta de este repositorio.
 2. Ejecuta el emulador de Integración Continua que preparamos para el taller:
    ```bash
-   ./workshop-assets/emulador-ci.sh
+   ./09-apiops/emulador-ci.sh
    ```
 3. Observa la salida en la consola. Verás cómo el pipeline ejecuta de forma totalmente autónoma las 5 fases críticas del DevOps de APIs:
    - **Fase 1:** Linting de la especificación técnica OpenAPI.
@@ -251,7 +257,7 @@ Visualizarás un hermoso reporte en la terminal donde las tres pruebas validan e
    - **Fase 3:** Linting de la infraestructura.
    - **Fase 4:** Detección de derivas (Drift Detection / Diff) vs Producción.
    - **Fase 5:** Ejecución de los Tests Unitarios del Ejercicio 08 usando `inso run test`.
-4. Muestra a la audiencia el archivo `workshop-assets/github-actions-demo.yml` para evidenciar cómo este script emulador se transcribe exactamente igual en componentes reales de Github Actions listos para usarse.
+4. Muestra a la audiencia el archivo `workshop-assets/09-apiops/github-actions-demo.yml` para evidenciar cómo este script emulador se transcribe exactamente igual en componentes reales de Github Actions listos para usarse.
 
 ---
 
@@ -261,7 +267,7 @@ Visualizarás un hermoso reporte en la terminal donde las tres pruebas validan e
 **Cómo se hace:**
 1. Abre una terminal y lanza el **segundo Data Plane** (que se enlazará al mismo clúster en la nube pero en un puerto destino diferente `8010` para no chocar con el nodo original local):
    ```bash
-   ./workshop-assets/dp2.sh
+   ./10-clustering/dp2.sh
    ```
    *(Este comando usará los mismos certificados mTLS pero levantará un contenedor llamado `kong_local_dp2`).*
 2. **Prueba la Replicación Base:** Envía una petición probando el nuevo puerto `8010`:

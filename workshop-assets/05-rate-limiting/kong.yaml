@@ -45,7 +45,7 @@ consumers:
     plugins:
       - name: rate-limiting
         config:
-          minute: 20
+          minute: 5
           policy: local
   - username: App-Internal
     keyauth_credentials:
