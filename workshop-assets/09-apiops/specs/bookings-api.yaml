@@ -1,0 +1,80 @@
+openapi: "3.0.0"
+info:
+  title: Bookings API
+  version: "1.0.0"
+  description: |
+    API de gestión de reservas de vuelos.
+    Permite consultar, crear y cancelar reservas asociadas a vuelos
+    disponibles en la red de la aerolínea.
+  contact:
+    name: Equipo Platform Engineering
+    email: platform@workshop.demo
+
+servers:
+  - url: https://api.workshop.demo
+    description: Entorno de producción (via Kong Gateway)
+
+paths:
+  /bookings:
+    get:
+      summary: Listar reservas
+      operationId: listBookings
+      description: Retorna la lista completa de reservas activas en el sistema.
+      parameters:
+        - name: apikey
+          in: header
+          required: true
+          schema:
+            type: string
+          description: API Key del consumer autorizado
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [confirmed, pending, cancelled]
+          description: Filtrar por estado de la reserva
+      responses:
+        "200":
+          description: Lista de reservas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+        "401":
+          description: No autorizado — API Key inválida o ausente
+        "429":
+          description: Límite de peticiones excedido
+          headers:
+            X-RateLimit-Remaining-Minute:
+              schema:
+                type: integer
+
+components:
+  schemas:
+    Booking:
+      type: object
+      required: [id, flight_id, passenger_name, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "b7e2c1d4-9f3a-4e8b-a012-654321fedcba"
+        flight_id:
+          type: string
+          example: "FL-2045"
+        passenger_name:
+          type: string
+          example: "Ana García"
+        seat:
+          type: string
+          example: "14C"
+        status:
+          type: string
+          enum: [confirmed, pending, cancelled]
+          example: confirmed
+        created_at:
+          type: string
+          format: date-time

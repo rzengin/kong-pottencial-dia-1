@@ -1,2 +1,16 @@
-workshop-assets/09-apiops/kong-generated.yaml
+# macOS
+.DS_Store
+
+# decK credentials
 workshop-assets/.deck.yaml
+
+# Terraform — generated config/state (never commit state or plan files)
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/tfplan
+**/.terraform.tfstate.lock.info
+
+# decK / APIOps — generated files
+workshop-assets/09-apiops/kong-generated.yaml

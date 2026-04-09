@@ -1,5 +1,3 @@
-version: '3.8'
-
 volumes:
   kong-logs:
     name: kong-logs

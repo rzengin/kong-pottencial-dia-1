@@ -11,23 +11,32 @@ Este laboratório tem como objetivo demonstrar as capacidades de controle, segur
 2. Ter instalado no seu computador a CLI do **decK** (versão v1.40+), a ferramenta **curl**, e o aplicativo de desktop **Insomnia** (versão gratuita).
 3. O Data Plane local do Kong já se encontra levantado de forma permanente para este laboratório.
 
-### B. Identificação e Obtenção de Credenciais
-Dado que o seu Data Plane já se encontra pré-configurado e operacional, você só precisa obter e configurar suas credenciais de acesso ao Konnect para gerenciar as políticas remotamente:
+### B. Identificação e Configuração de Credenciais
+Como o seu Data Plane já está pré-configurado e operacional, você só precisa obter e configurar suas credenciais de acesso ao Konnect:
 1. Identifique o seu **Control Plane** atribuído no Kong Konnect (terá o formato `cp-local-seu.nome`).
-2. Acesse as preferências do seu perfil no Kong Konnect e gere um **Personal Access Token (PAT)** para usar com o `decK`.
-
-### C. Verificação do Ambiente
-Antes de iniciar o laboratório, valide se tudo funciona corretamente e se você tem conectividade plena:
-1. **Sincronização Konnect:** Acesse a interface do seu Control Plane no Kong Konnect (seção *Data Plane Nodes*) e verifique se o seu nó (Data Plane) aparece conectado no estado **"In Sync"**.
-2. **Conectividade CLI decK:** Configure as variáveis no seu terminal e execute um comando `ping` para validar se o `decK` se conecta com sucesso:
+2. Acesse as preferências do seu perfil no Kong Konnect e gere um **Personal Access Token (PAT)**.
+3. Exporte suas credenciais no terminal. **Mantenha-as ativas durante todo o laboratório:**
    ```bash
    export KONNECT_TOKEN="<seu-token-pat>"
-   export CONTROL_PLANE_NAME="cp-local-seu.nome" # Substitua pelo seu nome exato
-   deck gateway ping --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+   export CONTROL_PLANE_NAME="cp-local-seu.nome"  # Substitua pelo seu nome exato
    ```
-   *O comando deve ser concluído com sucesso, o que confirma que as credenciais são válidas e você tem conexão com o Konnect.*
+4. Gere o arquivo de configuração do `decK` (`.deck.yaml`) com essas credenciais:
+   ```bash
+   cd workshop-assets/
+   bash 00-setup/generate-deck-config.sh
+   ```
+   > A partir deste ponto, todos os comandos `deck` leem o token e o Control Plane automaticamente a partir do `.deck.yaml`. Não é necessário passar parâmetros adicionais.
 
-Se o Data Plane estiver em Sync e o comando inicial responder corretamente, você está pronto para começar!
+### C. Verificação do Ambiente
+Antes de iniciar o laboratório, valide se tudo funciona corretamente:
+1. **Sincronização Konnect:** Acesse a interface do seu Control Plane no Kong Konnect (seção *Data Plane Nodes*) e verifique se o seu nó aparece no estado **"In Sync"**.
+2. **Conectividade CLI decK:**
+   ```bash
+   deck gateway ping
+   ```
+   *Deve responder corretamente, confirmando que as credenciais são válidas e você tem conexão com o Konnect.*
+
+Se o Data Plane estiver em Sync e o ping responder corretamente, você está pronto para começar!
 
 ---
 
@@ -52,7 +61,7 @@ docker run -d --platform linux/amd64 --name prism_mock -p 8080:4010 -v $(pwd)/wo
 
 A seguir gerenciaremos as políticas aplicando os arquivos `kong.yaml` localizados dentro de cada pasta de cenário.
 
-*Nota: Certifique-se de manter ativas na sua sessão de terminal as variáveis exportadas `KONNECT_TOKEN` e `CONTROL_PLANE_NAME` definidas na etapa de validação.*
+> 💡 **Nota sobre credenciais:** Todos os comandos `deck` deste laboratório lêem automaticamente o token e o Control Plane do arquivo `.deck.yaml` localizado em `workshop-assets/`. Não é necessário passar `--konnect-token` nem `--konnect-control-plane-name` em cada comando.
 
 ### Exercício 0: Preparação e Limpeza do ambiente
 **O que queremos alcançar:** Garantir que o Control Plane esteja em um estado completamente em branco, removendo qualquer configuração prévia, e iniciar a infraestrutura de observabilidade necessária para o laboratório.
@@ -60,8 +69,11 @@ A seguir gerenciaremos as políticas aplicando os arquivos `kong.yaml` localizad
 **Como se faz:**
 Primeiro, levantamos os contêineres do stack LGTM (Grafana, Jaeger, Prometheus, Loki) e o servidor mock de backend (Prism):
 ```bash
-# Stack de observabilidade
-cd workshop-assets/observabilidad && docker compose up -d && cd ..
+# Stack de observabilidade (reinicio limpo)
+cd workshop-assets/observabilidad
+docker compose down
+docker compose up -d
+cd ..
 
 # Backend mock (Prism) na porta 8080
 docker rm -f prism_mock 2>/dev/null || true
@@ -70,10 +82,23 @@ docker run -d --platform linux/amd64 --name prism_mock -p 8080:4010 \
   stoplight/prism:5 mock -h 0.0.0.0 /tmp/flights-api.yaml -m false
 ```
 
-Em seguida, limpamos o ambiente do Konnect e estabelecemos a base de observabilidade (cenário 0):
+Em seguida, limpe o ambiente completo do Konnect e estabeleça o estado inicial:
+
+**Limpeza completa (recomendada):**
 ```bash
-deck gateway reset --force --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
-deck gateway apply 00-setup/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+source ~/.zshrc && bash cleanup.sh
+```
+> ⚠️ **Importante:** O `source ~/.zshrc` é necessário para que `KONNECT_TOKEN` esteja disponível na sessão antes de executar o script. Sem ele, o Terraform fica aguardando input interativo e o processo trava silenciosamente.
+
+Este script apaga **tudo** criado durante o laboratório (4 etapas):
+- 🗑️ **Catalog Services + Catalog APIs** → via REST API do Konnect
+- 🗑️ **API Products + Dev Portal** → via Terraform
+- 🗑️ **Gateway** → serviços, rotas, plugins, consumers (deck reset)
+- 🗑️ **Docker** → Prism mock, stack LGTM, DP2
+
+Uma vez limpo, estabeleça o estado inicial:
+```bash
+deck gateway apply 00-setup/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -88,8 +113,8 @@ curl -i http://localhost:8000/
 
 **Como se faz:**
 ```bash
-deck gateway ping --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
-deck gateway apply 01-base/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway ping
+deck gateway apply 01-base/kong.yaml
 ```
 
 **Impacto (Validação e Geração de Tráfego):**
@@ -105,7 +130,7 @@ for i in {1..20}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://local
 
 **Como se faz:**
 ```bash
-deck gateway apply 02-metodos/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 02-metodos/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -122,7 +147,7 @@ curl -i -X POST http://localhost:8000/flights
 
 **Como se faz:**
 ```bash
-deck gateway apply 03-seguridad-auth/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 03-seguridad-auth/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -141,7 +166,7 @@ curl -i http://localhost:8000/flights -H "apikey: my-external-key"
 
 **Como se faz:**
 ```bash
-deck gateway apply 04-seguridad-acl/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 04-seguridad-acl/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -160,7 +185,7 @@ curl -i http://localhost:8000/flights -H "apikey: my-internal-key"
 
 **Como se faz:**
 ```bash
-deck gateway apply 05-rate-limiting/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 05-rate-limiting/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -175,7 +200,7 @@ for i in {1..7}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://localh
 
 **Como se faz:**
 ```bash
-deck gateway apply 06-transformaciones/kong.yaml --konnect-token $KONNECT_TOKEN --konnect-control-plane-name "$CONTROL_PLANE_NAME"
+deck gateway apply 06-transformaciones/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -242,30 +267,197 @@ Você visualizará um belo relatório no terminal onde os três testes validam o
 
 ---
 
-### Exercício 09: APIOps (O ciclo de vida da API Automatizado)
-**O que queremos mostrar:** Demonstrar como as equipes de Platform Engineering e DevOps podem automatizar o ciclo de vida completo de uma API usando design *Contract-First* e testes CI/CD através do ecossistema Kong (`inso` + `decK`).
+### Exercício 09: APIOps — Konnect Reference Platform Model
 
-**Como fazer:**
-1. No seu terminal (Mac/Linux), abra a pasta deste repositório.
-2. Execute o emulador de Integração Contínua que preparamos para o workshop:
-   ```bash
-   ./09-apiops/emulador-ci.sh
-   ```
-3. Observe a saída no console. O pipeline executa de forma totalmente autônoma as **7 fases** do ciclo DevOps de APIs:
+**O que queremos mostrar:** Implementar o ciclo de vida completo de APIs seguindo o modelo oficial do Kong: a **Konnect Reference Platform**. Este modelo define como as equipes de Platform Engineering e as equipes de API colaboram de forma declarativa usando `decK`, `Terraform` e `inso`, seguindo os mesmos 3 workflows que usa o projeto de referência **KongAirlines**.
 
-   | Fase | Ferramenta | Propósito |
-   |------|------------|-----------|
-   | FASE 1 | `inso lint spec` | Design-First QA — valida o contrato OpenAPI antes de tocar a infraestrutura |
-   | FASE 2 | `deck file openapi2kong` | Specs-to-Kong — compila o design em configuração declarativa |
-   | FASE 3 | `deck file validate` | Valida o YAML de infraestrutura gerado |
-   | FASE 4 | `deck gateway diff` | Drift Detection — o que mudaria em produção |
-   | FASE 5 | `inso run test` | Testes de comportamento sobre o gateway ativo |
-   | FASE 6 ★ | Konnect API Catalog | Publica a spec OpenAPI no catálogo interno da organização |
-   | FASE 7 ★ | Konnect Dev Portal | Publica a API para consumidores externos com auto-registro |
+> 📖 Referência oficial: https://developer.konghq.com/konnect-reference-platform/apiops/
 
-   > ★ As fases 6 e 7 requerem `KONNECT_TOKEN` e um Dev Portal ativo em `cloud.konghq.com/portals`.
+---
 
-4. Mostre à audiência o arquivo `workshop-assets/09-apiops/github-actions-demo.yml` para evidenciar como este script emulador se traduz exatamente em componentes reais do Github Actions prontos para uso.
+#### Arquitetura Multi-Equipe (Modelo KongAirlines)
+
+A Reference Platform divide responsabilidades entre **dois papéis**:
+
+| Papel | Responsabilidade | Arquivos neste workshop |
+|-------|-----------------|-------------------------|
+| **Platform Team** | Plugins globais (observabilidade, segurança, tráfego), ruleset de conformance, gestão de plataforma (Terraform) | `platform-team/` |
+| **API Teams** | OpenAPI Spec de sua API, plugins próprios (transformação, validação) | `flights-team/`, `bookings-team/`, etc. |
+
+A estrutura de arquivos resultante em `09-apiops/`:
+
+```
+09-apiops/
+│
+├── platform-team/                    # Platform Team — plugins globais
+│   ├── plugins-observabilidade.yaml   # prometheus + file-log + opentelemetry
+│   └── linting-rules.yaml             # Ruleset de conformance (deck file lint)
+│
+├── flights-team/                     # API Team — Flights API
+│   └── plugins-equipo.yaml            # correlation-id + response-transformer
+│
+├── bookings-team/   customers-team/   routes-team/
+│   └── plugins-equipo.yaml            # correlation-id (próprio de cada equipe)
+│
+├── env/
+│   └── local.env.yaml                 # Variáveis de ambiente (URLs de backend)
+├── terraform/                         # Platform resources: Portal, Catalog, API Products
+└── emulador-ci.sh                     # Orquestrador dos 3 workflows
+```
+
+---
+
+#### Os 3 Workflows da Reference Platform
+
+O pipeline executa **3 workflows em sequência**, com uma "aprovação" entre cada um (em GitHub Actions real: um Pull Request aprovado pelo Platform Team):
+
+```
+[Workflow 1] OpenAPI → decK
+      ↓  (PR simulado — em CI real: revisão do Platform Team)
+[Workflow 2] Stage decK Changes (diff)
+      ↓  (PR simulado — em CI real: revisão de mudanças no Gateway)
+[Workflow 3] decK Sync  ← único ponto de implantação no Gateway
+      +
+[Fase 4]    Terraform   ← API Products, Dev Portal, Service Catalog
+```
+
+---
+
+#### Como executar
+
+**Pré-requisitos:**
+- Terraform instalado (`brew install terraform`)
+- Variáveis exportadas: `KONNECT_TOKEN`, `CONTROL_PLANE_NAME`
+
+**Comando:**
+```bash
+cd workshop-assets/
+./09-apiops/emulador-ci.sh
+```
+
+---
+
+#### Detalhe de cada passo do pipeline
+
+**WORKFLOW 1 — OpenAPI → decK** *(equivale a `konnect-spec-to-deck.yaml` do KongAirlines)*
+
+| Passo | Comando | Quem faz? | Propósito |
+|-------|---------|-----------|----------|
+| 1.1 | `inso lint spec` | Platform Team | OAS conformance — valida o design antes de compilar |
+| 1.2 | `deck file openapi2kong` + `add-tags` | Automático | Compila o OAS de cada equipe para config decK e etiqueta com o nome da equipe |
+| 1.3 | `deck file add-plugins` | Cada API Team | Injeta plugins próprios da equipe (correlation-id, transformers) |
+| 1.4 | `deck file render` | Automático | Unifica as configs de todas as equipes em `kong-from-oas.yaml` |
+| 1.5 | `deck file merge` | Platform Team | Injeta plugins globais de observabilidade (prometheus, file-log, OTel) |
+| 1.6 | `deck file validate` | Automático | Validação offline da config resultante |
+| 1.7 | `deck file lint` | Platform Team | Conformance do Platform Team (tags, nomes de rotas, URLs) |
+| 1.8 | `inso run test` | Automático | Bateria de testes de comportamento pré-implantação |
+
+> **Resultado:** `kong-generated.yaml` — config unificada pronta para o próximo workflow.
+
+**WORKFLOW 2 — Stage decK Changes** *(equivale a `konnect-stage-deck-change.yaml`)*
+
+| Passo | Comando | Propósito |
+|-------|---------|----------|
+| 2.1 | `deck gateway diff` | Mostra exatamente o que mudaria no Control Plane. Em CI real, este diff é publicado como **comentário em um PR** para revisão do Platform Team antes de aprovar o deploy. |
+
+**WORKFLOW 3 — decK Sync** *(equivale a `konnect-deck-sync.yaml`)*
+
+| Passo | Comando | Propósito |
+|-------|---------|----------|
+| 3.1 | `deck gateway sync` | **Único ponto de implantação** no Gateway. Em CI real: dispara automaticamente ao mergear o PR do Workflow 2. |
+
+**FASE 4 — Recursos de Plataforma Konnect (Terraform)**
+
+Fora do escopo da Reference Platform decK, mas complementar: gerencia os recursos da plataforma Konnect de forma declarativa.
+
+```bash
+cd 09-apiops/terraform
+export TF_VAR_konnect_token=$KONNECT_TOKEN
+terraform init
+terraform plan    # equivalente a "deck gateway diff" para a plataforma
+terraform apply   # API Products + Portal + Catalog
+terraform destroy # limpeza completa
+```
+
+| Recurso | Ferramenta |
+|---------|------------|
+| API Products (v2) + versões + specs + docs | Terraform |
+| Dev Portal + publicações | Terraform |
+| Service Catalog (`/v1/catalog-services`) | Terraform |
+| Resource Mappings (`/v1/resource-mappings`) | `curl` (único residual — não suportado pelo provider ainda) |
+
+---
+
+#### O que você verá no console
+
+O emulador mostra claramente a separação entre os 3 workflows:
+
+```
+╬══════════════════════════════════════════════════════════════════╪
+║  WORKFLOW 1/3 │ OpenAPI → decK  (konnect-spec-to-deck)          ║
+╚══════════════════════════════════════════════════════════════════╝
+  [1.1] inso lint spec — OAS Conformance (ruleset do Platform Team)...
+  ⚠️  A spec tem erros de design. Em CI real isso bloquearia o PR.
+  [1.2] deck file openapi2kong — Compilando OAS → decK por equipe...
+  ✅ flights-team: kong-from-oas gerado
+  ✅ bookings-team, customers-team, routes-team: ok
+  [1.3] deck file add-plugins — Injetando plugins de cada equipe...
+  ✅ flights-team: correlation-id + response-transformer aplicados
+  [1.4] deck file render — Unificando todas as APIs...
+  ✅ Config unificada: kong-from-oas.yaml
+  [1.5] deck file merge — Platform Team injeta plugins de observabilidade...
+  ✅ Plugins de observabilidade do Platform Team fundidos
+  ...
+  🔀 PULL REQUEST SIMULADO → Workflow 1 concluído: pronto para Stage
+
+╬══════════════════════════════════════════════════════════════════╪
+║  WORKFLOW 2/3 │ Stage decK Changes  (konnect-stage-deck-change)  ║
+╚══════════════════════════════════════════════════════════════════╝
+  [2.1] deck gateway diff — Calculando mudanças vs. Control Plane...
+  🔀 PULL REQUEST SIMULADO → diff revisado, aprovado para Sync
+
+╬══════════════════════════════════════════════════════════════════╪
+║  WORKFLOW 3/3 │ decK Sync  (konnect-deck-sync)                   ║
+╚══════════════════════════════════════════════════════════════════╝
+  [3.1] deck gateway sync — Aplicando ao Control Plane...
+  ✅ Sync concluído
+```
+
+---
+
+#### Separação de responsabilidades: quem faz o quê?
+
+```
+OpenAPI Spec (cada equipe escreve)
+    │
+    ▼
+[flights-team/plugins-equipo.yaml]    Correlation ID, Response Transform
+[bookings-team/plugins-equipo.yaml]   Correlation ID
+        ↓ deck file add-plugins
+        ↓ deck file render (une tudo)
+        ↓
+[platform-team/plugins-observabilidade.yaml]   Prometheus, file-log, OTel
+        ↓ deck file merge
+        ↓
+[platform-team/linting-rules.yaml]    Governance: tags, nomes, URLs
+        ↓ deck file lint
+        ↓
+     kong-generated.yaml  ─▶  deck gateway diff  ─▶  deck gateway sync
+                                                              │
+                                            Control Plane Konnect ✅
+```
+
+---
+
+#### Conversa-chave com a audiência
+
+> **"Por que não fazemos tudo com um único comando?"**
+> A separação em 3 PRs com aprovação entre cada um é intencional: garante que nenhuma mudança no Gateway chegue a produção sem revisão humana. O Workflow 1 é responsabilidade da equipe de API, o Workflow 2 é revisão do Platform Team, e o Workflow 3 é o deploy automático apenas ao mergear. Isso implementa o **princípio dos 4 olhos** sobre a infraestrutura de APIs.
+
+> **"O que acontece se alguém quebra a spec OpenAPI?"**
+> O Passo 1.1 (`inso lint spec`) bloqueia o pipeline no ponto mais cedo possível — antes de gerar qualquer configuração de Gateway. O custo de detectar o erro é zero: nada foi consumido, nada foi implantado. Este é o valor central do modelo **Design-First / Contract-First**.
+
+5. Mostre à audiência o arquivo `09-apiops/github-actions-declarativo.yml` para evidenciar como este pipeline se integra no GitHub Actions com os 3 workflows reais que usa o KongAirlines.
 
 ---
 

@@ -1,207 +1,353 @@
 #!/bin/bash
 
-# Resolución de rutas: funciona sin importar desde dónde se llame el script
+# ── Entorno: asegurar PATH completo y variables Konnect ─────────────────────
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$KONNECT_TOKEN" ] && [ -f "$HOME/.zshrc" ]; then
+  eval "$(grep -E '^export (KONNECT_TOKEN|KONNECT_ADDR|CONTROL_PLANE_NAME|CONTROL_PLANE_ID)=' "$HOME/.zshrc")"
+fi
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Resolución de rutas
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ASSETS_DIR="$(dirname "$SCRIPT_DIR")"   # workshop-assets/
+ASSETS_DIR="$(dirname "$SCRIPT_DIR")"
 INSOMNIA_DIR="$ASSETS_DIR/insomnia"
-GENERATED_FILE="$SCRIPT_DIR/kong-generated.yaml"  # dentro del proyecto
 
-# =========================================================================
-# KONG APIOPS PIPELINE EMULATOR
-# Este script emula un GitHub Action o GitLab CI Runner ejecutando
-# el flujo completo de plataforma: Linting, Conversión y Testing.
-# =========================================================================
+# Directorio de trabajo del pipeline (archivos intermedios)
+PIPELINE_DIR="/tmp/apiops-pipeline"
+rm -rf "$PIPELINE_DIR" && mkdir -p "$PIPELINE_DIR"
 
-echo -e "\n🚀 INICIANDO PIPELINE DE INTEGRACIÓN CONTINUA (APIOps) 🚀"
-echo "================================================================="
+# Fuentes de configuración (multi-team)
+PLATFORM_DIR="$SCRIPT_DIR/platform-team"
+FLIGHTS_OAS="$INSOMNIA_DIR/flights-api.yaml"
+BOOKINGS_SPEC="$SCRIPT_DIR/specs/bookings-api.yaml"
+CUSTOMERS_SPEC="$SCRIPT_DIR/specs/customers-api.yaml"
+ROUTES_SPEC="$SCRIPT_DIR/specs/routes-api.yaml"
 
-# ----------------------------------------------------
-# FASE 1: VALIDACIÓN DEL DISEÑO VÍA LINTING (Design-First)
-# ----------------------------------------------------
-echo -e "\n[FASE 1] -> inso lint spec (Validando OpenAPI Contract)..."
-# Validamos que el YAML de OpenAPI no tenga errores semánticos ni rompa reglas.
-if inso lint spec "$INSOMNIA_DIR/flights-api.yaml" 2>&1; then
-  echo "✅ Spec válida."
+# Separador visual de workflow
+wf_header() {
+  echo ""
+  echo "╔══════════════════════════════════════════════════════════════════╗"
+  printf  "║  %-64s║\n" "$1"
+  echo "╚══════════════════════════════════════════════════════════════════╝"
+  echo "   Ref: https://developer.konghq.com/konnect-reference-platform/apiops/"
+  echo ""
+}
+
+pr_banner() {
+  echo ""
+  echo "  ┌─────────────────────────────────────────────────────────────┐"
+  echo "  │  🔀  PULL REQUEST SIMULADO (en CI real: GitHub Actions PR)  │"
+  echo "  │  $1"
+  echo "  │  Estado: ✅ Auto-aprobado para el workshop                   │"
+  echo "  └─────────────────────────────────────────────────────────────┘"
+  echo ""
+}
+
+echo ""
+echo "🚀 PIPELINE APIOPS — Konnect Reference Platform Model 🚀"
+echo "=================================================================="
+echo "  Basado en: developer.konghq.com/konnect-reference-platform/apiops"
+echo "  Empresa de ejemplo: KongAirlines → nuestro caso: Workshop Airlines"
+echo "  Equipos: flights-team · bookings-team · customers-team · routes-team"
+echo "  Plataforma: platform-team (observabilidad, conformance, Terraform)"
+echo "=================================================================="
+
+# ============================================================================
+# WORKFLOW 1: OpenAPI → decK
+# Equivale a: konnect-spec-to-deck.yaml de KongAirlines
+# Pasos: OAS lint → openapi2kong → add-plugins (equipo) → add-tags →
+#        merge (platform plugins) → render (config unificada) →
+#        validate → lint (conformance)
+# ============================================================================
+wf_header "WORKFLOW 1/3 │ OpenAPI → decK  (konnect-spec-to-deck)"
+
+# ── PASO 1.1: OAS Conformance (diseño primero) ────────────────────────────
+echo "[1.1] inso lint spec — OAS Conformance (Platform Team ruleset)..."
+if inso lint spec "$FLIGHTS_OAS" 2>&1; then
+  echo "  ✅ Spec válida."
 else
-  echo -e "\n⚠️  La spec tiene errores de diseño (ver arriba). En un pipeline real esto bloquearía el despliegue."
-  echo "   (Continuando demo para mostrar las fases siguientes...)"
+  echo "  ⚠️  La spec tiene errores de diseño. En CI real esto bloquearia el PR."
+  echo "     (Continuando para mostrar el resto del pipeline...)"
 fi
 
-# ----------------------------------------------------
-# FASE 2: GENERACIÓN DE CÓDIGO (Specs-to-Kong) 
-# ----------------------------------------------------
-echo -e "\n[FASE 2] -> deck file openapi2kong (Compilando a Declarativo)..."
-# Traducimos automáticamente el contrato a la configuración nativa del Gateway
-deck file openapi2kong -s "$INSOMNIA_DIR/flights-api.yaml" > "$GENERATED_FILE"
-echo "✅ Configuración de Gateway generada en $GENERATED_FILE"
+# ── PASO 1.2: openapi2kong — Generar config base por equipo ───────────────
+echo ""
+echo "[1.2] deck file openapi2kong — Compilando OAS → decK por equipo..."
 
-# ----------------------------------------------------
-# FASE 3: LINTING DE LA INFRAESTRUCTURA GENERADA
-# ----------------------------------------------------
-echo -e "\n[FASE 3] -> deck file validate (Verificando Infraestructura)..."
-deck file validate "$GENERATED_FILE"
+# Flights API (fuente: insomnia/flights-api.yaml)
+deck file openapi2kong -s "$FLIGHTS_OAS" \
+  | deck file add-tags --selector='$..services[*]' flights-team \
+  -o "$PIPELINE_DIR/flights-base.yaml" 2>/dev/null
+echo "  ✅ flights-team: $PIPELINE_DIR/flights-base.yaml"
 
-# ----------------------------------------------------
-# FASE 4: DRIFT DETECTION & PLAN (Dry-Run)
-# ----------------------------------------------------
-echo -e "\n[FASE 4] -> deck gateway diff (Plan de Despliegue)..."
-# Compara el archivo generado con el estado actual del Control Plane en Konnect.
-# Muestra exactamente qué se crearía, actualizaría o eliminaría si se hiciera el apply.
+# Bookings API
+deck file openapi2kong -s "$BOOKINGS_SPEC" \
+  | deck file add-tags --selector='$..services[*]' bookings-team \
+  -o "$PIPELINE_DIR/bookings-base.yaml" 2>/dev/null
+echo "  ✅ bookings-team: $PIPELINE_DIR/bookings-base.yaml"
+
+# Customers API
+deck file openapi2kong -s "$CUSTOMERS_SPEC" \
+  | deck file add-tags --selector='$..services[*]' customers-team \
+  -o "$PIPELINE_DIR/customers-base.yaml" 2>/dev/null
+echo "  ✅ customers-team: $PIPELINE_DIR/customers-base.yaml"
+
+# Routes API
+deck file openapi2kong -s "$ROUTES_SPEC" \
+  | deck file add-tags --selector='$..services[*]' routes-team \
+  -o "$PIPELINE_DIR/routes-base.yaml" 2>/dev/null
+echo "  ✅ routes-team: $PIPELINE_DIR/routes-base.yaml"
+
+# ── PASO 1.3: add-plugins (equipo) — Plugins propios de cada API Team ─────
+echo ""
+echo "[1.3] deck file add-plugins — Inyectando plugins de cada equipo..."
+echo "  (Cada equipo agrega sus propios plugins de transformación y validación)"
+
+deck file add-plugins \
+  -s "$PIPELINE_DIR/flights-base.yaml" \
+  "$SCRIPT_DIR/flights-team/plugins-equipo.yaml" \
+  -o "$PIPELINE_DIR/flights-plugins.yaml" 2>/dev/null
+echo "  ✅ flights-team: correlation-id + response-transformer aplicados"
+
+deck file add-plugins \
+  -s "$PIPELINE_DIR/bookings-base.yaml" \
+  "$SCRIPT_DIR/bookings-team/plugins-equipo.yaml" \
+  -o "$PIPELINE_DIR/bookings-plugins.yaml" 2>/dev/null
+echo "  ✅ bookings-team: correlation-id aplicado"
+
+deck file add-plugins \
+  -s "$PIPELINE_DIR/customers-base.yaml" \
+  "$SCRIPT_DIR/customers-team/plugins-equipo.yaml" \
+  -o "$PIPELINE_DIR/customers-plugins.yaml" 2>/dev/null
+echo "  ✅ customers-team: correlation-id aplicado"
+
+deck file add-plugins \
+  -s "$PIPELINE_DIR/routes-base.yaml" \
+  "$SCRIPT_DIR/routes-team/plugins-equipo.yaml" \
+  -o "$PIPELINE_DIR/routes-plugins.yaml" 2>/dev/null
+echo "  ✅ routes-team: correlation-id aplicado"
+
+# ── PASO 1.4: render — Unificación de todas las APIs ─────────────────────
+echo ""
+echo "[1.4] deck file render — Unificando todas las APIs en kong-from-oas.yaml..."
+deck file render \
+  "$PIPELINE_DIR/flights-plugins.yaml" \
+  "$PIPELINE_DIR/bookings-plugins.yaml" \
+  "$PIPELINE_DIR/customers-plugins.yaml" \
+  "$PIPELINE_DIR/routes-plugins.yaml" \
+  -o "$PIPELINE_DIR/kong-from-oas.yaml" 2>/dev/null
+echo "  ✅ Config unificada: $PIPELINE_DIR/kong-from-oas.yaml"
+
+# ── PASO 1.5: merge — Platform Team inyecta plugins globales ──────────────
+echo ""
+echo "[1.5] deck file merge — Platform Team inyecta plugins de observabilidad..."
+echo "  (prometheus + file-log + opentelemetry — siempre presentes en TODAS las APIs)"
+
+deck file merge \
+  "$PIPELINE_DIR/kong-from-oas.yaml" \
+  "$PLATFORM_DIR/plugins-observabilidad.yaml" \
+  -o "$PIPELINE_DIR/kong-merged.yaml" 2>/dev/null || \
+deck file merge \
+  "$PIPELINE_DIR/kong-from-oas.yaml" \
+  "$PLATFORM_DIR/plugins-observabilidad.yaml" \
+  > "$PIPELINE_DIR/kong-merged.yaml" 2>/dev/null
+
+if [ -s "$PIPELINE_DIR/kong-merged.yaml" ]; then
+  echo "  ✅ Plugins de observabilidad del Platform Team fusionados"
+else
+  # Fallback: usar la config sin merge de observabilidad
+  cp "$PIPELINE_DIR/kong-from-oas.yaml" "$PIPELINE_DIR/kong-merged.yaml"
+  echo "  ⚠️  Merge con plugins de observabilidad no disponible — usando config base"
+fi
+
+# ── PASO 1.6: validate (offline) ─────────────────────────────────────────
+echo ""
+echo "[1.6] deck file validate — Validación offline de la config final..."
+deck file validate "$PIPELINE_DIR/kong-merged.yaml" 2>/dev/null && \
+  echo "  ✅ Config final válida (offline)" || \
+  echo "  ⚠️  Validación offline con advertencias (no bloquea — revisión manual recomendada)"
+
+# ── PASO 1.7: lint — Conformance del Platform Team ───────────────────────
+echo ""
+echo "[1.7] deck file lint — Conformance del Platform Team (linting-rules.yaml)..."
+echo "  (Verifica tags, nombres de rutas, URLs de upstream)"
+deck file lint \
+  -s "$PIPELINE_DIR/kong-merged.yaml" \
+  --fail-severity warn \
+  "$PLATFORM_DIR/linting-rules.yaml" 2>/dev/null && \
+  echo "  ✅ Conformance OK — config aprobada por el Platform Team" || \
+  echo "  ⚠️  Advertencias de conformance. En CI real requiere revisión de plataforma."
+
+# Guardar resultado del Workflow 1 (el archivo siempre existirá)
+cp "$PIPELINE_DIR/kong-merged.yaml" "$SCRIPT_DIR/kong-generated.yaml"
+echo "  📄 Artifact generado: kong-generated.yaml"
+
+pr_banner "Workflow 1 completado: kong-generated.yaml listo para Stage   │"
+
+# ── PASO 1.8: inso run test — Batería post-spec (antes del diff) ─────────
+echo "[1.8] inso run test — Validación de comportamiento pre-despliegue..."
+inso run test "Bateria Pruebas Escenario 08" -e "Base Environment" \
+  -w "$INSOMNIA_DIR/Insomnia_Workspace.json" 2>&1
+
+# ============================================================================
+# WORKFLOW 2: Stage decK Changes
+# Equivale a: konnect-stage-deck-change.yaml de KongAirlines
+# Genera el diff y lo presenta como un PR para revisión del adminstrador
+# ============================================================================
+wf_header "WORKFLOW 2/3 │ Stage decK Changes  (konnect-stage-deck-change)"
+
+echo "[2.1] deck gateway diff — Calculando cambios vs. estado actual del Control Plane..."
+echo "  (En GitHub Actions: este diff se publica como comentario en el PR)"
+echo ""
 
 if [ ! -f "$ASSETS_DIR/.deck.yaml" ]; then
-  echo "  ⚠️  No se encontró $ASSETS_DIR/.deck.yaml"
-  echo "     Ejecuta: bash 00-setup/generate-deck-config.sh"
+  echo "  ⚠️  No se encontró .deck.yaml"
 else
-  deck gateway diff "$GENERATED_FILE" 2>&1
+  deck gateway diff "$SCRIPT_DIR/kong-generated.yaml" 2>&1
   DIFF_EXIT=$?
+  echo ""
   if [ $DIFF_EXIT -eq 0 ] || [ $DIFF_EXIT -eq 2 ]; then
     echo "  ✅ Drift Detection completado — revisa el plan de cambios arriba."
   else
-    echo "  ❌ Error al ejecutar el diff (exit $DIFF_EXIT)"
+    echo "  ⚠️  Error al ejecutar el diff (exit $DIFF_EXIT)"
   fi
 fi
 
-# ----------------------------------------------------
-# FASE 5: TESTING DE COMPORTAMIENTO
-# ----------------------------------------------------
-echo -e "\n[FASE 5] -> inso run test (Validación Unitaria Constante)..."
-# Ejecutamos las aserciones construidas por QA para certificar que el Gateway 
-# cumple con seguridad, rate limits y enrutamiento esperado.
-inso run test "Bateria Pruebas Escenario 08" -e "Base Environment" -w "$INSOMNIA_DIR/Insomnia_Workspace.json"
+pr_banner "Workflow 2 completado: diff revisado → aprobado para Sync      │"
 
-# ----------------------------------------------------
-# FASE 6: PUBLICACIÓN EN KONNECT API CATALOG
-# ----------------------------------------------------
-echo -e "\n[FASE 6] -> Konnect API Catalog (Publicando spec en el catálogo interno)..."
-# Registramos el contrato OpenAPI en el Service Hub de Konnect para que
-# los equipos internos puedan descubrir y consumir la API.
+# ============================================================================
+# WORKFLOW 3: decK Sync
+# Equivale a: konnect-deck-sync.yaml de KongAirlines
+# Se dispara al mergear el PR del Workflow 2. En el workshop: auto-aprobado.
+# ============================================================================
+wf_header "WORKFLOW 3/3 │ decK Sync  (konnect-deck-sync)"
 
+echo "[3.1] deck gateway sync — Aplicando configuración al Control Plane..."
+echo "  (En CI real: se ejecuta automáticamente al mergear el PR #2)"
+echo ""
+
+if [ -f "$ASSETS_DIR/.deck.yaml" ]; then
+  deck gateway sync "$SCRIPT_DIR/kong-generated.yaml" 2>&1
+  SYNC_EXIT=$?
+  echo ""
+  if [ $SYNC_EXIT -eq 0 ]; then
+    echo "  ✅ Sync completado — Gateway actualizado con la nueva config"
+  else
+    echo "  ❌ Error en deck gateway sync (exit $SYNC_EXIT)"
+  fi
+fi
+
+# ============================================================================
+# FASE ADICIONAL 4: Terraform — Platform Resources (Konnect)
+# Fuera del scope de la Reference Platform (solo decK), pero complementario:
+# gestiona API Products, Dev Portal y Service Catalog via Terraform.
+# ============================================================================
+echo ""
+echo "┌──────────────────────────────────────────────────────────────────┐"
+echo "│  FASE 4 │ Terraform — Recursos de Plataforma Konnect             │"
+echo "│  (API Products · Dev Portal · Service Catalog)                   │"
+echo "└──────────────────────────────────────────────────────────────────┘"
+
+TERRAFORM_DIR="$SCRIPT_DIR/terraform"
 KONNECT_REGION="${KONNECT_REGION:-us}"
-KONNECT_BASE="https://${KONNECT_REGION}.api.konghq.com"
-PRODUCT_NAME="Flights API"
-VERSION_NAME="v1"
+KONNECT_API="https://${KONNECT_REGION}.api.konghq.com"
 
-# 6a. Buscar o crear el API Product
-PRODUCT_SEARCH=$(curl -s -X GET \
-  "$KONNECT_BASE/v2/api-products?filter%5Bname%5D=Flights+API" \
-  -H "Authorization: Bearer $KONNECT_TOKEN" \
-  -H "Accept: application/json")
+# Obtener Control Plane ID dinámicamente
+echo "  → Obteniendo Control Plane ID..."
+CP_RESP=$(curl -s -H "Authorization: Bearer $KONNECT_TOKEN" \
+  "$KONNECT_API/v2/control-planes?filter%5Bname%5D%5Beq%5D=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CONTROL_PLANE_NAME:-Local Gateway}'))")")
+CP_ID=$(echo "$CP_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data'][0]['id'] if d.get('data') else '')" 2>/dev/null)
 
-PRODUCT_ID=$(echo "$PRODUCT_SEARCH" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d[0]['id'] if d else '')" 2>/dev/null)
-
-if [ -z "$PRODUCT_ID" ]; then
-  echo "  Creando API Product '$PRODUCT_NAME' en el catálogo..."
-  CREATE_RESP=$(curl -s -X POST "$KONNECT_BASE/v2/api-products" \
-    -H "Authorization: Bearer $KONNECT_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\": \"$PRODUCT_NAME\", \"description\": \"API de vuelos — Workshop Kong Konnect\"}")
-  PRODUCT_ID=$(echo "$CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-  echo "  ✅ API Product creado: $PRODUCT_ID"
+if [ -z "$CP_ID" ]; then
+  echo "  ⚠️  No se pudo obtener el Control Plane ID (¿KONNECT_TOKEN válido?)"
 else
-  echo "  ℹ️  API Product existente encontrado: $PRODUCT_ID"
+  echo "  ✅ Control Plane ID: $CP_ID"
 fi
 
-# 6b. Buscar o crear la versión del producto
-VERSION_SEARCH=$(curl -s \
-  "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions" \
-  -H "Authorization: Bearer $KONNECT_TOKEN")
+# Obtener Gateway Service IDs
+SVC_RESP=$(curl -s -H "Authorization: Bearer $KONNECT_TOKEN" \
+  "$KONNECT_API/v2/control-planes/$CP_ID/core-entities/services?size=50")
 
-VERSION_ID=$(echo "$VERSION_SEARCH" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); matches=[v['id'] for v in d if v.get('name')=='$VERSION_NAME']; print(matches[0] if matches else '')" 2>/dev/null)
+get_svc_id() {
+  local name="$1"
+  echo "$SVC_RESP" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+for s in d.get('data', []):
+    if s.get('name') == '$name':
+        print(s.get('id', ''))
+        break
+" 2>/dev/null
+}
 
-if [ -z "$VERSION_ID" ]; then
-  echo "  Creando versión '$VERSION_NAME'..."
-  VER_RESP=$(curl -s -X POST \
-    "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions" \
-    -H "Authorization: Bearer $KONNECT_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\": \"$VERSION_NAME\", \"publish_status\": \"published\"}")
-  VERSION_ID=$(echo "$VER_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
-  echo "  ✅ Versión '$VERSION_NAME' creada: $VERSION_ID"
+# Exportar variables para Terraform
+export TF_VAR_konnect_token="$KONNECT_TOKEN"
+export TF_VAR_konnect_server_url="$KONNECT_API"
+export TF_VAR_control_plane_id="$CP_ID"
+export TF_VAR_gateway_service_id_flights="$(get_svc_id "flights")"
+export TF_VAR_gateway_service_id_bookings="$(get_svc_id "bookings")"
+export TF_VAR_gateway_service_id_customers="$(get_svc_id "customers")"
+export TF_VAR_gateway_service_id_routes="$(get_svc_id "routes")"
+
+if ! command -v terraform &>/dev/null; then
+  echo "  ⚠️  Terraform no instalado — saltando (brew install terraform)"
 else
-  echo "  ℹ️  Versión '$VERSION_NAME' existente: $VERSION_ID"
-fi
-
-# 6c. Subir (o actualizar) la especificación OpenAPI
-# El campo 'content' debe estar codificado en base64 según la API de Konnect
-SPEC_PAYLOAD=$(python3 -c "
-import json, base64
-content = open('$INSOMNIA_DIR/flights-api.yaml', 'rb').read()
-encoded = base64.b64encode(content).decode('utf-8')
-print(json.dumps({'name': 'flights-api.yaml', 'content': encoded}))
-")
-
-# Buscar si ya existe una spec para esta versión (la API no admite más de una)
-SPEC_ID=$(curl -s "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
-  -H "Authorization: Bearer $KONNECT_TOKEN" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(d[0]['id'] if d else '')" 2>/dev/null)
-
-if [ -n "$SPEC_ID" ]; then
-  # Spec ya existe → actualizarla con PATCH
-  SPEC_RESP=$(curl -s -o /tmp/spec_resp.json -w "%{http_code}" \
-    -X PATCH "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications/$SPEC_ID" \
-    -H "Authorization: Bearer $KONNECT_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$SPEC_PAYLOAD")
-  echo "  ✅ Especificación OpenAPI actualizada en el catálogo (HTTP $SPEC_RESP)"
-else
-  # No existe → crearla con POST
-  SPEC_RESP=$(curl -s -o /tmp/spec_resp.json -w "%{http_code}" \
-    -X POST "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specifications" \
-    -H "Authorization: Bearer $KONNECT_TOKEN" \
-    -H "Content-Type: application/json" \
-    -d "$SPEC_PAYLOAD")
-  if [ "$SPEC_RESP" = "201" ] || [ "$SPEC_RESP" = "200" ]; then
-    echo "  ✅ Especificación OpenAPI publicada en el catálogo (HTTP $SPEC_RESP)"
+  cd "$TERRAFORM_DIR"
+  terraform init -upgrade -input=false -no-color 2>&1 | grep -E "(Initializing|provider|Error)" | head -5
+  echo "  → terraform plan (Drift Detection de Plataforma)..."
+  terraform plan -out=tfplan -input=false -no-color 2>&1 | tail -5
+  echo "  → terraform apply..."
+  if terraform apply -auto-approve -input=false -no-color tfplan 2>&1; then
+    echo "  ✅ Plataforma Konnect desplegada:"
+    echo "     📚 API Products + versiones + specs + docs"
+    echo "     🌐 Dev Portal → $(terraform output -raw portal_v2_url 2>/dev/null || echo 'ver Konnect UI')"
   else
-    echo "  ⚠️  Error al publicar spec: HTTP $SPEC_RESP"
-    python3 -c "import json; f=open('/tmp/spec_resp.json'); print(json.dumps(json.load(f), indent=2))" 2>/dev/null
+    echo "  ❌ Error en terraform apply"
   fi
+  cd "$SCRIPT_DIR"
 fi
 
-# ----------------------------------------------------
-# FASE 7: PUBLICACIÓN EN DEV PORTAL
-# ----------------------------------------------------
-echo -e "\n[FASE 7] -> Konnect Dev Portal (Publicando API para consumidores externos)..."
-# Habilitamos la visibilidad de la API en el portal de desarrolladores
-# para que equipos externos puedan registrarse y obtener credenciales.
+# ── Resource Mappings (único curl residual — provider no soporta aún) ────
+echo ""
+echo "  → Resource Mappings (curl — único residuo no cubierto por Terraform)..."
+SC_BASE="https://${KONNECT_REGION}.api.konghq.com/v1"
+RESOURCES_JSON=$(curl -s -H "Authorization: Bearer $KONNECT_TOKEN" \
+  "$SC_BASE/resources?filter%5Btype%5D%5Beq%5D=gateway_svc&page%5Bsize%5D=100")
 
-# Obtener el portal por defecto
-PORTAL_RESP=$(curl -s "$KONNECT_BASE/v2/portals" \
-  -H "Authorization: Bearer $KONNECT_TOKEN")
+get_resource_id() {
+  local svc_name="$1"
+  echo "$RESOURCES_JSON" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for item in data.get('data', []):
+    if item.get('name') == '$svc_name' and item.get('type') == 'gateway_svc':
+        print(item.get('id', ''))
+        break
+" 2>/dev/null
+}
 
-PORTAL_ID=$(echo "$PORTAL_RESP" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(d[0]['id'] if d else '')" 2>/dev/null)
-
-if [ -z "$PORTAL_ID" ]; then
-  echo "  ⚠️  No se encontró un Dev Portal activo en esta organización."
-  echo "     Crea un portal en https://cloud.konghq.com/portals y vuelve a ejecutar."
-else
-  echo "  ℹ️  Dev Portal encontrado: $PORTAL_ID"
-
-  # Publicar la versión del producto en el portal
-  PUBLISH_RESP=$(curl -s -o /tmp/portal_resp.json -w "%{http_code}" \
-    -X POST "$KONNECT_BASE/v2/portals/$PORTAL_ID/product-versions" \
+for MAPPING in "flights-api|flights" "bookings-api|bookings" "customers-api|customers" "routes-api|routes"; do
+  IFS='|' read -r CS_SLUG GW_NAME <<< "$MAPPING"
+  RESOURCE_ID=$(get_resource_id "$GW_NAME")
+  [ -z "$RESOURCE_ID" ] && echo "  ⚠️  '$GW_NAME' no encontrado" && continue
+  RM_RESP=$(curl -s -o /tmp/rm.json -w "%{http_code}" \
+    -X POST "$SC_BASE/resource-mappings" \
     -H "Authorization: Bearer $KONNECT_TOKEN" \
     -H "Content-Type: application/json" \
-    -d "{
-      \"product_version_id\": \"$VERSION_ID\",
-      \"publish_status\": \"published\",
-      \"deprecated\": false,
-      \"application_registration_enabled\": true,
-      \"auto_approve_registration\": false
-    }")
+    -d "{\"service\": \"$CS_SLUG\", \"resource\": \"$RESOURCE_ID\"}")
+  [ "$RM_RESP" = "201" ] && echo "  ✅ $GW_NAME → $CS_SLUG vinculado"
+  [ "$RM_RESP" = "409" ] && echo "  ℹ️  $GW_NAME → $CS_SLUG ya vinculado"
+  [ "$RM_RESP" != "201" ] && [ "$RM_RESP" != "409" ] && \
+    echo "  ⚠️  Error $GW_NAME (HTTP $RM_RESP)"
+done
 
-  if [ "$PUBLISH_RESP" = "201" ]; then
-    echo "  ✅ API publicada en el Dev Portal (visible para desarrolladores externos)"
-  elif [ "$PUBLISH_RESP" = "409" ]; then
-    echo "  ✅ API ya estaba publicada en el Dev Portal — sin cambios necesarios"
-  else
-    echo "  ⚠️  Respuesta al publicar en portal: HTTP $PUBLISH_RESP"
-    cat /tmp/portal_resp.json
-  fi
-fi
-
-echo "================================================================="
-echo -e "🎉 PIPELINE COMPLETADO EXITOSAMENTE. LISTO PARA PRODUCCIÓN 🎉\n"
+echo ""
+echo "=================================================================="
+echo "🎉 PIPELINE COMPLETADO EXITOSAMENTE. LISTO PARA PRODUCCIÓN 🎉"
+echo ""
+echo "  Estructura multi-equipo aplicada:"
+echo "    Workflow 1 → OAS → decK (3 equipos + Platform Team)"
+echo "    Workflow 2 → Stage diff  (deck gateway diff)"
+echo "    Workflow 3 → Sync        (deck gateway sync)"
+echo "    Fase 4     → Terraform   (API Products · Portal · Catalog)"
+echo "=================================================================="

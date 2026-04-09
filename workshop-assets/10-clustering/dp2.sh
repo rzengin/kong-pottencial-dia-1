@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# ── Entorno: asegurar PATH completo ─────────────────────────────────────────
+export PATH="/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:$PATH"
+# ─────────────────────────────────────────────────────────────────────────────
+
 KONG_CLUSTER_CERT=$(cat <<'EOF'
 -----BEGIN CERTIFICATE-----
 MIICHTCCAcSgAwIBAgIBATAKBggqhkjOPQQDBDBAMT4wCQYDVQQGEwJVUzAxBgNV
