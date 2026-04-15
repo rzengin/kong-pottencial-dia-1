@@ -1,0 +1,33 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: detailed
+
+processors:
+  batch:
+  
+  # Filtro de exemplo: Ignorar traces do serviço 'debug-headers'
+  filter/exclude_debug:
+    error_mode: ignore
+    traces:
+      span:
+        - attributes["peer.service"] == "debug-headers"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      # Para habilitar o filtro, adicione "filter/exclude_debug" na linha abaixo:
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]

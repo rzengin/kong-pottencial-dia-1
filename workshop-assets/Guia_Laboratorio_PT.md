@@ -232,8 +232,14 @@ curl -i http://localhost:8000/flights -H "apikey: my-external-key"
 ### Exercício 8: Exploração da Observabilidade Integral Remota
 **O que queremos mostrar:** Visualizar como as configurações globais (File Log, Prometheus e OpenTelemetry) capturaram a telemetria de todo o laboratório em tempo real.
 
-**Passo 1 — Aplicar a configuração de observabilidade completa:**
+**Passo 1 — Reiniciar o Stack e Aplicar a configuração de observabilidade completa:**
+Para que o OpenTelemetry Collector assuma como intermediário (proxy de telemetria), reiniciaremos o stack do Docker e faremos o deploy da política na nuvem:
+
 ```bash
+cd observabilidad/
+docker compose down
+docker compose up -d
+cd ..
 deck gateway sync 08-observabilidad/kong.yaml
 ```
 
@@ -277,8 +283,24 @@ docker exec -it kong_local_dp tail -f /tmp/kong-access.log
 curl -s http://localhost:8100/metrics | grep kong_http_requests_total
 ```
 
-**Passo 5 — Visualizar no Stack Externo (Grafana, Jaeger, Loki, Prometheus):**
-1. **Jaeger (Traces):** Acesse [http://localhost:16686](http://localhost:16686). Em "Service", selecione `kong-api-gateway` → **Find Traces**. Você verá o ciclo de vida completo de cada requisição com tempos de latência desagregados (execução de plugins vs upstream).
+**Passo 5 — Inspecionar intercepção pelo OpenTelemetry Collector:**
+Neste cenário, o OTel Collector atua como roteador intermediário transparente. Ele intercepta as traças geradas pelo Kong antes que alcancem o Jaeger.
+```bash
+docker compose -f observabilidad/docker-compose.yaml logs otel-collector
+```
+*(Você verá no console a estrutura detalhada dos "Spans" interceptados em tempo real, como `kong.balancer` ou `kong.header_filter`).*
+
+**Passo 5.1 — (Opcional) Demonstração Avançada: Filtrando Trazas no Collector**
+Podemos demonstrar o poder de roteamento do Collector eliminando traças lixo (ex: pings de healthcheck ou debug) antes que alcancem o banco de dados do Jaeger, economizando custos.
+1. Edite o arquivo `observabilidad/config/otel-collector.yaml`.
+2. Observe que deixamos um bloco preparado `filter/exclude_debug` que ignora (`drop`) todas as traças onde o atributo `peer.service` é igual a `"debug-headers"`.
+3. Para ativar, desça até o final do arquivo na seção `pipelines.traces.processors` e adicione o filtro à lista, deixando assim:
+   `processors: [filter/exclude_debug, batch]`
+4. Reinicie o Collector: `docker compose -f observabilidad/docker-compose.yaml restart otel-collector`
+5. Gere requisições para `http://localhost:8000/debug/headers` e demonstre que **nenhuma** nova requisição desse serviço chega ao log do Collector, enquanto o serviço `/flights` continua passando normalmente!
+
+**Passo 6 — Visualizar no Stack Externo (Grafana, Jaeger, Loki, Prometheus):**
+1. **Jaeger (Traces):** Acesse [http://localhost:16686](http://localhost:16686). Em "Service", selecione `kong-api-gateway` → **Find Traces**. O Jaeger continuará exibindo o ciclo de vida completo da requisição, mas agora documentaremos que os dados foram roteados através do Collector.
 2. **Grafana (Logs e Métricas):** Acesse [http://localhost:3000](http://localhost:3000) (Usuário/Senha: `admin` / `admin`).
     - Vá para **Explore** (ícone de bússola no painel esquerdo).
     - Selecione o Data Source **Loki**.
@@ -382,10 +404,81 @@ O pipeline executa **3 workflows em sequência**, com uma "aprovação" entre ca
 - Terraform instalado (`brew install terraform`)
 - Variáveis exportadas: `KONNECT_TOKEN`, `CONTROL_PLANE_NAME`
 
-**Comando:**
+Você tem duas opções para executar este cenário: usar o emulador de CI (script) ou executar os comandos passo a passo manualmente para entender o processo com profundidade.
+
+##### Opção 1: Execução Automatizada (Emulador CI)
 ```bash
 cd workshop-assets/
 ./10-apiops/emulador-ci.sh
+```
+
+##### Opção 2: Execução Manual Passo a Passo (The Hard Way)
+Se você quer entender exatamente o que o pipeline faz por baixo dos panos, execute estes comandos um por um a partir do diretório `workshop-assets/`:
+
+**WORKFLOW 1 — OpenAPI → decK**
+
+```bash
+# 1.1 OAS Conformance (Validação de design)
+inso lint spec insomnia/flights-api.yaml
+
+# 1.2 Compilar OpenAPI para decK e etiquetar por equipe
+deck file openapi2kong -s insomnia/flights-api.yaml | deck file add-tags --selector='$..services[*]' flights-team -o 10-apiops/flights-base.yaml
+deck file openapi2kong -s 10-apiops/specs/bookings-api.yaml | deck file add-tags --selector='$..services[*]' bookings-team -o 10-apiops/bookings-base.yaml
+deck file openapi2kong -s 10-apiops/specs/customers-api.yaml | deck file add-tags --selector='$..services[*]' customers-team -o 10-apiops/customers-base.yaml
+deck file openapi2kong -s 10-apiops/specs/routes-api.yaml | deck file add-tags --selector='$..services[*]' routes-team -o 10-apiops/routes-base.yaml
+
+# 1.3 Injetar plugins próprios de cada equipe (Ex: correlation-id, transformações)
+deck file add-plugins -s 10-apiops/flights-base.yaml 10-apiops/flights-team/plugins-equipo.yaml -o 10-apiops/flights-plugins.yaml
+deck file add-plugins -s 10-apiops/bookings-base.yaml 10-apiops/bookings-team/plugins-equipo.yaml -o 10-apiops/bookings-plugins.yaml
+deck file add-plugins -s 10-apiops/customers-base.yaml 10-apiops/customers-team/plugins-equipo.yaml -o 10-apiops/customers-plugins.yaml
+deck file add-plugins -s 10-apiops/routes-base.yaml 10-apiops/routes-team/plugins-equipo.yaml -o 10-apiops/routes-plugins.yaml
+
+# 1.4 Unificar configurações de todas as APIs
+deck file render 10-apiops/flights-plugins.yaml 10-apiops/bookings-plugins.yaml 10-apiops/customers-plugins.yaml 10-apiops/routes-plugins.yaml -o 10-apiops/kong-from-oas.yaml
+
+# 1.5 Platform Team injeta plugins globais (Ex: Prometheus, File Log)
+deck file merge 10-apiops/kong-from-oas.yaml 10-apiops/platform-team/plugins-observabilidad.yaml -o 10-apiops/kong-merged.yaml
+
+# 1.6 Validação offline da configuração resultante
+deck file validate 10-apiops/kong-merged.yaml
+
+# 1.7 Conformance do Platform Team (Validação de tags, nomes de rotas, etc.)
+deck file lint -s 10-apiops/kong-merged.yaml --fail-severity warn 10-apiops/platform-team/linting-rules.yaml
+
+# Guardar arquivo final que seria usado
+cp 10-apiops/kong-merged.yaml kong-generated.yaml
+```
+
+**WORKFLOW 2 — Stage decK Changes**
+
+```bash
+# 2.1 Mostrar o que mudaria no Control Plane (Drift Detection)
+deck gateway diff kong-generated.yaml
+```
+
+**WORKFLOW 3 — decK Sync**
+
+```bash
+# 3.1 Aplicar configurações no Control Plane (Único deploy no gateway)
+deck gateway sync kong-generated.yaml
+```
+
+**FASE 4 — Recursos de Plataforma Konnect (Terraform)**
+
+```bash
+# Obter Control Plane ID
+export CP_ID=$(curl -s -H "Authorization: Bearer $KONNECT_TOKEN" "https://${KONNECT_REGION:-us}.api.konghq.com/v2/control-planes?filter%5Bname%5D%5Beq%5D=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${CONTROL_PLANE_NAME:-Local Gateway}'))")" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['data'][0]['id'] if d.get('data') else '')")
+
+# Executar Terraform
+cd 10-apiops/terraform
+export TF_VAR_konnect_token=$KONNECT_TOKEN
+export TF_VAR_konnect_server_url="https://${KONNECT_REGION:-us}.api.konghq.com"
+export TF_VAR_control_plane_id=$CP_ID
+
+terraform init
+terraform plan
+terraform apply -auto-approve
+cd ../..
 ```
 
 ---

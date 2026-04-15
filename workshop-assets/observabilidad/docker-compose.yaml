@@ -20,8 +20,19 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686" # UI
+    networks:
+      - observabilidad-net
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/config.yaml
+    ports:
       - "4317:4317"   # OTLP gRPC default port
       - "4318:4318"   # OTLP HTTP default port
+    depends_on:
+      - jaeger
     networks:
       - observabilidad-net
 
