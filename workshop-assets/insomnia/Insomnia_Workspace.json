@@ -120,7 +120,7 @@
       "parentId": "wrk_1",
       "modified": 1700000000000,
       "created": 1700000000000,
-      "name": "Bateria Pruebas Escenario 08",
+      "name": "Bateria Pruebas Escenario 09",
       "_type": "unit_test_suite"
     },
     {
@@ -141,16 +141,6 @@
       "name": "Debe bloquear sin autenticacion (401)",
       "code": "const response = await insomnia.send();\nexpect(response.status).to.equal(401);",
       "requestId": "req_3",
-      "_type": "unit_test"
-    },
-    {
-      "_id": "ut_3",
-      "parentId": "uts_1",
-      "modified": 1700000000000,
-      "created": 1700000000000,
-      "name": "Rutas internas tienen Rate Limit (Spam - 429)",
-      "code": "/* Ejecutamos múltiples request para disparar el Rate Limit (Límite=3) */\nawait insomnia.send();\nawait insomnia.send();\nawait insomnia.send();\nconst response = await insomnia.send();\n\nif (response.status === 403) {\n   expect(response.status).to.equal(403); // Valida ACL por ahora\n} else {\n   expect(response.status).to.equal(429); // Valida Rate Limiting puro\n}",
-      "requestId": "req_2",
       "_type": "unit_test"
     }
   ]

@@ -1,0 +1,169 @@
+name: Kong APIOps Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  apiops-pipeline:
+    runs-on: ubuntu-latest
+    # Equivalente al .deck.yaml local: todas las llamadas a 'deck' usan estos valores
+    env:
+      DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+      DECK_KONNECT_CONTROL_PLANE_NAME: ${{ secrets.KONNECT_CP_NAME }}
+      DECK_KONNECT_ADDR: "https://us.api.konghq.com"
+      DECK_ANALYTICS: "false"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+
+      - name: Install Inso CLI
+        run: npm install -g insomnia-inso
+
+      - name: Install decK CLI
+        run: |
+          curl -sL https://github.com/Kong/deck/releases/download/v1.38.0/deck_1.38.0_linux_amd64.tar.gz -o deck.tar.gz
+          tar -xf deck.tar.gz -C /tmp
+          sudo cp /tmp/deck /usr/local/bin/
+
+      # FASE 1 — Design-First: validar el contrato OpenAPI antes de cualquier despliegue
+      - name: "[FASE 1] Lint OpenAPI Spec"
+        run: inso lint spec "workshop-assets/insomnia/flights-api.yaml"
+        continue-on-error: true   # error intencional en la spec para demo de QA
+
+      # FASE 2 — Specs-to-Kong: compilar el contrato a configuración declarativa
+      - name: "[FASE 2] Generate Kong Declarative Config (openapi2kong)"
+        run: deck file openapi2kong -s workshop-assets/insomnia/flights-api.yaml -o kong-generated.yaml
+
+      # FASE 3 — Validar el YAML generado
+      - name: "[FASE 3] Validate generated Kong config"
+        run: deck file validate kong-generated.yaml
+
+      # FASE 4 — Drift Detection: ver qué cambiaría en el Control Plane
+      - name: "[FASE 4] Diff Kong Gateway Configuration"
+        run: deck gateway diff kong-generated.yaml
+
+      # FASE 5 — Tests de comportamiento sobre el entorno activo
+      - name: "[FASE 5] Run Integration Tests"
+        run: inso run test "Bateria Pruebas Escenario 08" -e "Base Environment" -w workshop-assets/insomnia/Insomnia_Workspace.json
+
+      # Se ejecuta el Apply únicamente si las validaciones y los tests pasan exitosamente
+      - name: "Apply Kong Gateway Configuration (Production)"
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: deck gateway apply kong-generated.yaml
+
+      # FASE 6 — API Catalog: registrar/actualizar la spec en Konnect Service Hub
+      - name: "[FASE 6] Publish to Konnect API Catalog"
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+          KONNECT_REGION: us
+        run: |
+          KONNECT_BASE="https://${KONNECT_REGION}.api.konghq.com"
+          PRODUCT_NAME="Flights API"
+          VERSION_NAME="v1"
+
+          # Buscar o crear API Product
+          PRODUCT_ID=$(curl -s "$KONNECT_BASE/v2/api-products?filter%5Bname%5D=Flights+API" \
+            -H "Authorization: Bearer $KONNECT_TOKEN" | \
+            python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d[0]['id'] if d else '')")
+
+          if [ -z "$PRODUCT_ID" ]; then
+            PRODUCT_ID=$(curl -s -X POST "$KONNECT_BASE/v2/api-products" \
+              -H "Authorization: Bearer $KONNECT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"$PRODUCT_NAME\", \"description\": \"API de vuelos — Workshop Kong Konnect\"}" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+            echo "✅ API Product creado: $PRODUCT_ID"
+          else
+            echo "ℹ️  API Product existente: $PRODUCT_ID"
+          fi
+
+          # Crear versión si no existe
+          VERSION_ID=$(curl -s "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions" \
+            -H "Authorization: Bearer $KONNECT_TOKEN" | \
+            python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); m=[v['id'] for v in d if v.get('name')=='$VERSION_NAME']; print(m[0] if m else '')")
+
+          if [ -z "$VERSION_ID" ]; then
+            VERSION_ID=$(curl -s -X POST "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions" \
+              -H "Authorization: Bearer $KONNECT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\": \"$VERSION_NAME\", \"publish_status\": \"published\"}" | \
+              python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+            echo "✅ Versión '$VERSION_NAME' creada: $VERSION_ID"
+          fi
+
+          # Subir la especificación OpenAPI (POST; si hay conflicto → PATCH)
+          SPEC_PAYLOAD=$(python3 -c "
+          import json; content = open('workshop-assets/insomnia/flights-api.yaml').read()
+          print(json.dumps({'name': 'flights-api.yaml', 'content': content}))
+          ")
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specification" \
+            -H "Authorization: Bearer $KONNECT_TOKEN" \
+            -H "Content-Type: application/json" -d "$SPEC_PAYLOAD")
+
+          if [ "$HTTP" = "409" ]; then
+            curl -s -X PATCH "$KONNECT_BASE/v2/api-products/$PRODUCT_ID/product-versions/$VERSION_ID/specification" \
+              -H "Authorization: Bearer $KONNECT_TOKEN" -H "Content-Type: application/json" -d "$SPEC_PAYLOAD"
+            echo "✅ Spec actualizada en el catálogo"
+          else
+            echo "✅ Spec publicada en el catálogo (HTTP $HTTP)"
+          fi
+
+          echo "PRODUCT_ID=$PRODUCT_ID" >> $GITHUB_OUTPUT
+          echo "VERSION_ID=$VERSION_ID" >> $GITHUB_OUTPUT
+        id: catalog
+
+      # FASE 7 — Dev Portal: publicar para consumidores externos con self-service
+      - name: "[FASE 7] Publish to Konnect Dev Portal"
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+          KONNECT_REGION: us
+          VERSION_ID: ${{ steps.catalog.outputs.VERSION_ID }}
+        run: |
+          KONNECT_BASE="https://${KONNECT_REGION}.api.konghq.com"
+
+          # Obtener el portal por defecto
+          PORTAL_ID=$(curl -s "$KONNECT_BASE/v2/portals" \
+            -H "Authorization: Bearer $KONNECT_TOKEN" | \
+            python3 -c "import sys,json; d=json.load(sys.stdin).get('data',[]); print(d[0]['id'] if d else '')")
+
+          if [ -z "$PORTAL_ID" ]; then
+            echo "⚠️  No se encontró un Dev Portal. Créalo en https://cloud.konghq.com/portals"
+            exit 0
+          fi
+
+          # Publicar la versión en el portal (idempotente: ignora 409)
+          HTTP=$(curl -s -o /tmp/portal.json -w "%{http_code}" \
+            -X POST "$KONNECT_BASE/v2/portals/$PORTAL_ID/product-versions" \
+            -H "Authorization: Bearer $KONNECT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"product_version_id\": \"$VERSION_ID\",
+              \"publish_status\": \"published\",
+              \"deprecated\": false,
+              \"application_registration_enabled\": true,
+              \"auto_approve_registration\": false
+            }")
+
+          if [ "$HTTP" = "201" ]; then
+            echo "✅ API publicada en el Dev Portal — developers externos pueden registrarse"
+          elif [ "$HTTP" = "409" ]; then
+            echo "✅ API ya publicada en el Dev Portal — sin cambios necesarios"
+          else
+            echo "⚠️  Respuesta inesperada: HTTP $HTTP"
+            cat /tmp/portal.json
+          fi
+

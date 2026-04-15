@@ -23,10 +23,3 @@ plugins:
         os.name: linux
 
 
-services:
-  - name: kong-metrics
-    url: http://127.0.0.1:8100/metrics
-    routes:
-      - name: kong-metrics-route
-        paths:
-          - /metrics

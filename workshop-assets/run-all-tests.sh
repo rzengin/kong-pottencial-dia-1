@@ -110,23 +110,23 @@ check "GET /flights → 200" "200" http://localhost:8000/flights
 check "GET /customers → 200" "200" http://localhost:8000/customers
 
 # ─────────────────────────────────────────────
-apply "ESCENARIO 02 — Restricción de métodos" "02-metodos/kong.yaml"
-check "GET /flights → 200" "200" http://localhost:8000/flights
-check "POST /flights → 404" "404" -X POST http://localhost:8000/flights
-
-# ─────────────────────────────────────────────
-apply "ESCENARIO 03 — Key Auth" "03-seguridad-auth/kong.yaml"
+apply "ESCENARIO 02 — Key Auth" "02-seguridad-auth/kong.yaml"
 check_retry "Sin key → 401" "401" http://localhost:8000/flights
 check "Key externa → 200" "200" -H "apikey: my-external-key" http://localhost:8000/flights
 check "Key interna → 200 sin ACL aun" "200" -H "apikey: my-internal-key" http://localhost:8000/flights
 
 # ─────────────────────────────────────────────
-apply "ESCENARIO 04 — ACL" "04-seguridad-acl/kong.yaml"
+apply "ESCENARIO 03 — Restricción de métodos" "03-metodos-opcional/kong.yaml"
+check "GET /flights → 200" "200" -H "apikey: my-external-key" http://localhost:8000/flights
+check "POST /flights → 404" "404" -X POST -H "apikey: my-external-key" http://localhost:8000/flights
+
+# ─────────────────────────────────────────────
+apply "ESCENARIO 04 — ACL" "04-seguridad-acl-opcional/kong.yaml"
 check "External → 200" "200" -H "apikey: my-external-key" http://localhost:8000/flights
 check "Internal → 403" "403" -H "apikey: my-internal-key" http://localhost:8000/flights
 
 # ─────────────────────────────────────────────
-apply "ESCENARIO 05 — Rate Limiting (External: 5/min)" "05-rate-limiting/kong.yaml"
+apply "ESCENARIO 05 — Rate Limiting (External: 5/min)" "05-rate-limiting-opcional/kong.yaml"
 echo "  Enviando 7 requests con key externa (esperado: 200×5 → 429×2):"
 codes=""
 for i in {1..7}; do
@@ -140,13 +140,17 @@ rl_count=$(echo "$codes" | tr ' ' '\n' | grep -c "429")
 [ "$rl_count" -ge 2 ] && ok "2+ requests com 429" || fail "requests com 429" "2" "$rl_count"
 
 # ─────────────────────────────────────────────
-apply "ESCENARIO 06 — Transformaciones" "06-transformaciones/kong.yaml"
+apply "ESCENARIO 06 — Transformaciones" "06-transformaciones-opcional/kong.yaml"
 headers=$(curl -si -H "apikey: my-external-key" http://localhost:8000/flights 2>/dev/null)
 echo "$headers" | grep -qi "x-perceptiva" && ok "Header x-perceptiva presente" || fail "Header x-perceptiva" "presente" "ausente"
+
+# ─────────────────────────────────────────────
+apply "ESCENARIO 07 — Correlation ID" "07-correlation-id/kong.yaml"
+headers=$(curl -si -H "apikey: my-external-key" http://localhost:8000/flights 2>/dev/null)
 echo "$headers" | grep -qi "x-correlation-id" && ok "Header x-correlation-id presente" || fail "Header x-correlation-id" "presente" "ausente"
 
 # ─────────────────────────────────────────────
-apply "ESCENARIO 07 — Observabilidad completa" "07-observabilidad/kong.yaml"
+apply "ESCENARIO 08 — Observabilidad completa" "08-observabilidad/kong.yaml"
 check_retry "GET /flights (external) → 200" "200" -H "apikey: my-external-key" http://localhost:8000/flights
 check_retry "GET /debug/headers → 200 (httpbin)" "200" http://localhost:8000/debug/headers
 metrics=$(curl -s http://localhost:8100/metrics | grep "^kong_http_requests_total" | wc -l | tr -d ' ')
@@ -155,7 +159,7 @@ metrics=$(curl -s http://localhost:8100/metrics | grep "^kong_http_requests_tota
 # ─────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 ESCENARIO 08 — Testing con inso CLI"
+echo "📦 ESCENARIO 09 — Testing con inso CLI"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 inso run test "Bateria Pruebas Escenario 08" \
   -e "Base Environment" \
@@ -165,26 +169,26 @@ inso run test "Bateria Pruebas Escenario 08" \
 # ─────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 ESCENARIO 09 — APIOps / Emulador CI"
+echo "📦 ESCENARIO 10 — APIOps / Emulador CI"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-bash 09-apiops/emulador-ci.sh 2>&1 | grep -E "✅|⚠️|passing|COMPLETADO|Error"
+bash 10-apiops/emulador-ci.sh 2>&1 | grep -E "✅|⚠️|passing|COMPLETADO|Error"
 ok "Pipeline APIOps ejecutado"
 
 # Restaurar estado del Gateway para E10 (el emulador-ci.sh usa su propia config generada)
-echo "  → Restaurando estado base con key-auth para E10..."
-deck gateway sync 07-observabilidad/kong.yaml --silence-events 2>&1 | grep -E "Summary|Error" | head -3
+echo "  → Restaurando estado base con key-auth para E11..."
+deck gateway sync 08-observabilidad/kong.yaml --silence-events 2>&1 | grep -E "Summary|Error" | head -3
 sleep 15
 
 # ─────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 ESCENARIO 10 — Clustering / DP2 (Terraform + Docker)"
+echo "📦 ESCENARIO 11 — Clustering / DP2 (Terraform + Docker)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 # Destruir primero si existe (garantiza estado limpio para el test)
 export TF_VAR_konnect_token="$KONNECT_TOKEN"
-terraform -chdir=10-clustering/terraform destroy -auto-approve -no-color 2>&1 | grep -E "destroyed|Error" | head -2
+terraform -chdir=11-clustering/terraform destroy -auto-approve -no-color 2>&1 | grep -E "destroyed|Error" | head -2
 # Lanzar el segundo Data Plane via Terraform (provider kreuzwerker/docker)
-terraform -chdir=10-clustering/terraform apply -auto-approve -no-color 2>&1 | grep -E "created|Error|Apply complete"
+terraform -chdir=11-clustering/terraform apply -auto-approve -no-color 2>&1 | grep -E "created|Error|Apply complete"
 echo "⏳ Aguardando DP2 conectar ao Konnect (20s)..."
 sleep 20
 check "DP2 porta 8010 — Sin key → 401" "401" http://localhost:8010/flights

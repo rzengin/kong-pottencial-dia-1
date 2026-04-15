@@ -122,7 +122,7 @@ fi
 log_step "Paso 2/4 — Plataforma Konnect (Terraform destroy)"
 echo "   Recursos: Catalog Services · Catalog APIs · API Products · Dev Portal"
 
-TERRAFORM_DIR="$SCRIPT_DIR/09-apiops/terraform"
+TERRAFORM_DIR="$SCRIPT_DIR/10-apiops/terraform"
 
 if [ -f "$TERRAFORM_DIR/terraform.tfstate" ]; then
 
@@ -147,12 +147,14 @@ if [ -f "$TERRAFORM_DIR/terraform.tfstate" ]; then
   set +e
   terraform -chdir="$TERRAFORM_DIR" destroy -auto-approve -no-color \
     2>&1 | tee "$TF_LOG_FILE" | \
-    grep --line-buffered -E "Destroying|Destruction complete|destroyed|Error|No changes|Plan:" | \
-    while IFS= read -r line; do
+    grep --line-buffered -E "Destroying|Destruction complete|destroyed|Error|No changes|Plan:" | {
+      while IFS= read -r line; do
+        stop_spinner
+        echo "   → $line"
+        start_spinner "Destruyendo recursos Konnect vía Terraform..."
+      done
       stop_spinner
-      echo "   → $line"
-      start_spinner "Destruyendo recursos Konnect vía Terraform..."
-    done
+    }
   TF_EXIT=${PIPESTATUS[0]}
   set -e
 
@@ -184,12 +186,14 @@ start_spinner "Ejecutando deck gateway reset..."
 DECK_LOG_FILE="/tmp/cleanup_deck_$$.log"
 set +e
 deck gateway reset --force 2>&1 | tee "$DECK_LOG_FILE" | \
-  grep --line-buffered -E "Deleted|deleting|Summary|Error|Total|connecting|Resetting" | \
-  while IFS= read -r line; do
+  grep --line-buffered -E "Deleted|deleting|Summary|Error|Total|connecting|Resetting" | {
+    while IFS= read -r line; do
+      stop_spinner
+      echo "   → $line"
+      start_spinner "Ejecutando deck gateway reset..."
+    done
     stop_spinner
-    echo "   → $line"
-    start_spinner "Ejecutando deck gateway reset..."
-  done
+  }
 DECK_EXIT=${PIPESTATUS[0]}
 set -e
 
@@ -225,17 +229,19 @@ docker compose -f "$SCRIPT_DIR/observabilidad/docker-compose.yaml" down 2>&1 \
 log_ok "Stack LGTM detenido en $(elapsed $T3)s"
 
 # DP2 (Terraform Docker) — opcional
-DP2_TF="$SCRIPT_DIR/10-clustering/terraform"
+DP2_TF="$SCRIPT_DIR/11-clustering/terraform"
 if [ -f "$DP2_TF/terraform.tfstate" ]; then
   echo "   → Destruyendo DP2 (Terraform Docker)..."
   T_DP2=$SECONDS
   start_spinner "Destruyendo DP2..."
   set +e
   terraform -chdir="$DP2_TF" destroy -auto-approve -no-color 2>&1 | \
-    grep --line-buffered -E "destroyed|Destroying|Error" | \
-    while IFS= read -r line; do
-      stop_spinner; echo "      → $line"; start_spinner "Destruyendo DP2..."
-    done || true
+    grep --line-buffered -E "destroyed|Destroying|Error" | {
+      while IFS= read -r line; do
+        stop_spinner; echo "      → $line"; start_spinner "Destruyendo DP2..."
+      done
+      stop_spinner
+    } || true
   set -e
   stop_spinner
   log_ok "DP2 eliminado en $(elapsed $T_DP2)s"

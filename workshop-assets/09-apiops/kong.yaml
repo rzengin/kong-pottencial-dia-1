@@ -1,9 +1,0 @@
-_format_version: "3.0"
-
-# Este escenario representa el Ejercicio 09 (APIOps y Ciclo de Vida CI/CD).
-# Todo el proceso de generación de código, linting y verificación de derivas
-# ocurre de manera dinámica utilizando el script 'emulador-ci.sh' y los comandos
-# 'inso' y 'deck file openapi2kong'.
-# 
-# Por ende, este archivo se provee vacío; su propósito es exclusivamente
-# pedagógico para mantener la secuencia narrativa del laboratorio intacta.

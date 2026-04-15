@@ -1,0 +1,25 @@
+_format_version: "3.0"
+plugins:
+  - name: file-log
+    config:
+      path: /tmp/kong-access.log
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+  - name: opentelemetry
+    config:
+      traces_endpoint: http://host.docker.internal:4318/v1/traces
+      sampling_rate: 1.0
+      resource_attributes:
+        service.name: kong-api-gateway
+        os.name: linux
+
+# Este escenario representa el Ejercicio 10 (Clustering, Escalabilidad y Auto-Descubrimiento).
+# El objetivo de este ejercicio es provisionar un segundo Data Plane físico (dp2.sh)
+# y comprobar cómo hereda configuraciones y establece observabilidad sin intervención extra.
+# 
+# Al no existir ninguna regla nueva de enrutamiento que subir al Control Plane,
+# este archivo se mantiene intencionalmente vacío.

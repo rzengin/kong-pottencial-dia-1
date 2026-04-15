@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# ── Entorno: asegurar PATH completo ─────────────────────────────────────────
+export PATH="/opt/homebrew/bin:/usr/local/bin:/Applications/Docker.app/Contents/Resources/bin:$PATH"
+# ─────────────────────────────────────────────────────────────────────────────
+
+KONG_CLUSTER_CERT=$(cat <<'EOF'
+-----BEGIN CERTIFICATE-----
+MIICHTCCAcSgAwIBAgIBATAKBggqhkjOPQQDBDBAMT4wCQYDVQQGEwJVUzAxBgNV
+BAMeKgBrAG8AbgBuAGUAYwB0AC0ATABvAGMAYQBsACAARwBhAHQAZQB3AGEAeTAe
+Fw0yNjAzMjMxMzQ2NTJaFw0zNjAzMjMxMzQ2NTJaMEAxPjAJBgNVBAYTAlVTMDEG
+A1UEAx4qAGsAbwBuAG4AZQBjAHQALQBMAG8AYwBhAGwAIABHAGEAdABlAHcAYQB5
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENI2f0P4XvO9gr0RNuDtBCpASxJBo
+WNNXoZLvgG5WH+8pPxJuE9I7JVuF+21XrV88SwRWXq3eQ909woGZnz+WpKOBrjCB
+qzAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIABjAdBgNVHSUEFjAUBggrBgEFBQcD
+AQYIKwYBBQUHAwIwFwYJKwYBBAGCNxQCBAoMCGNlcnRUeXBlMCMGCSsGAQQBgjcV
+AgQWBBQBAQEBAQEBAQEBAQEBAQEBAQEBATAcBgkrBgEEAYI3FQcEDzANBgUpAQEB
+AQIBCgIBFDATBgkrBgEEAYI3FQEEBgIEABQACjAKBggqhkjOPQQDBANHADBEAiBk
+6tttV7YJB43V8srs46hurlAs9zwdZ/Bv3f2VIAviogIgCNamOMYbFk8TyDT30T7n
+IHDBl5PMSOu9fGatVUiMSYI=
+-----END CERTIFICATE-----
+EOF
+)
+
+KONG_CLUSTER_CERT_KEY=$(cat <<'EOF'
+-----BEGIN PRIVATE KEY-----
+MIGTAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBHkwdwIBAQQghD1E05q822l4zTEU
+Y6rVoNzuCDLw+UMvxEhvKkg/5lagCgYIKoZIzj0DAQehRANCAAQ0jZ/Q/he872Cv
+RE24O0EKkBLEkGhY01ehku+AblYf7yk/Em4T0jslW4X7bVetXzxLBFZerd5D3T3C
+gZmfP5ak
+-----END PRIVATE KEY-----
+EOF
+)
+
+docker run -d \
+  --name kong_local_dp2 \
+  --hostname=557f6aa59348 \
+  --user=kong \
+  -p 8010:8000 \
+  -p 8453:8443 \
+  -p 8110:8100 \
+  -v kong-logs:/tmp \
+  --restart=always \
+  --env=KONG_ROLE=data_plane \
+  --env=KONG_STATUS_LISTEN=0.0.0.0:8100 \
+  --env=KONG_DATABASE=off \
+  --env=KONG_KONNECT_MODE=on \
+  --env=KONG_VITALS=off \
+  --env=KONG_ROUTER_FLAVOR=expressions \
+  --env=KONG_TRACING_INSTRUMENTATIONS=all \
+  --env=KONG_CLUSTER_MTLS=pki \
+  --env=KONG_CLUSTER_CONTROL_PLANE=83897e20f5.us.cp.konghq.com:443 \
+  --env=KONG_CLUSTER_SERVER_NAME=83897e20f5.us.cp.konghq.com \
+  --env=KONG_CLUSTER_TELEMETRY_ENDPOINT=83897e20f5.us.tp.konghq.com:443 \
+  --env=KONG_CLUSTER_TELEMETRY_SERVER_NAME=83897e20f5.us.tp.konghq.com \
+  --env=KONG_LUA_SSL_TRUSTED_CERTIFICATE=system \
+  --env=KONG_UNTRUSTED_LUA=on \
+  --env="KONG_CLUSTER_CERT=${KONG_CLUSTER_CERT}" \
+  --env="KONG_CLUSTER_CERT_KEY=${KONG_CLUSTER_CERT_KEY}" \
+  kong/kong-gateway:3.13

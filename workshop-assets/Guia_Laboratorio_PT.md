@@ -98,7 +98,7 @@ Este script apaga **tudo** criado durante o laboratório (4 etapas):
 
 Uma vez limpo, estabeleça o estado inicial:
 ```bash
-deck gateway apply 00-setup/kong.yaml
+deck gateway sync 00-setup/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -114,40 +114,24 @@ curl -i http://localhost:8000/
 **Como se faz:**
 ```bash
 deck gateway ping
-deck gateway apply 01-base/kong.yaml
+deck gateway sync 01-base/kong.yaml
 ```
 
 **Impacto (Validação e Geração de Tráfego):**
-Faça uma chamada à rota exposta na porta 8000 gerando tráfego de forma contínua para coletar telemetria inicial:
+Faça uma chamada à rota exposta na porta 8000 gerando tráfego de forma contínua para coletar telemetria inicial.
+> 💡 Neste cenário ainda **não há autenticação**, portanto as requisições funcionam sem API key:
 ```bash
 echo "Gerando tráfego inicial..."
 for i in {1..20}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://localhost:8000/flights; sleep 0.2; done
 ```
-*Este comando injetará múltiplas requisições. Nos próximos exercícios, as requisições gerarão rejeições (401, 403, 429) que também enriquecerão nossos dashboards.*
+*Este comando injetará múltiplas requisições (todas devem responder 200). Nos próximos exercícios, as requisições gerarão rejeições (401, 403, 429) que também enriquecerão nossos dashboards.*
 
-### Exercício 2: Controle de exposição por método (02-metodos.yaml)
-**O que queremos mostrar:** Reduzir a superfície de ataque aceitando apenas solicitações do tipo GET em uma rota.
-
-**Como se faz:**
-```bash
-deck gateway apply 02-metodos/kong.yaml
-```
-
-**Impacto (Validação):**
-```bash
-curl -i http://localhost:8000/flights
-# Retorna 200 OK
-
-curl -i -X POST http://localhost:8000/flights
-# Retorna 404 No Route Matched
-```
-
-### Exercício 3: Autenticação com Key Auth e Consumers (03-seguridad-auth.yaml)
+### Exercício 2: Autenticação com Key Auth e Consumers (02-seguridad-auth.yaml)
 **O que queremos mostrar:** Centralizar a autenticação no nível do gateway sem modificar o código do backend, identificando diferentes "Consumidores".
 
 **Como se faz:**
 ```bash
-deck gateway apply 03-seguridad-auth/kong.yaml
+deck gateway sync 02-seguridad-auth/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -161,12 +145,31 @@ curl -i http://localhost:8000/flights -H "apikey: my-external-key"
 # Retorna 200 OK
 ```
 
-### Exercício 4: Autorização com ACL (04-seguridad-acl.yaml)
+> 💡 **Nota sobre Laboratórios Opcionais:** Os exercícios de 3 a 6 são **modulares e independentes**. Como o laboratório de Autenticação (02) foi habilitado permanentemente, você pode avançar direto para o Exercício 7 a qualquer momento sem que nada quebre! Se pular os intermediários, a sua API funcionará perfeitamente e focará apenas no essencial.
+
+### Exercício 3: **(Opcional)** Controle de exposição por método (03-metodos-opcional)
+**O que queremos mostrar:** Reduzir a superfície de ataque aceitando apenas solicitações do tipo GET em uma rota.
+
+**Como se faz:**
+```bash
+deck gateway sync 03-metodos-opcional/kong.yaml
+```
+
+**Impacto (Validação):**
+```bash
+curl -i http://localhost:8000/flights -H "apikey: my-external-key"
+# Retorna 200 OK
+
+curl -i -X POST http://localhost:8000/flights -H "apikey: my-external-key"
+# Retorna 404 No Route Matched
+```
+
+### Exercício 4: **(Opcional)** Autorização com ACL (04-seguridad-acl-opcional)
 **O que queremos mostrar:** Além de saber quem você é (autenticação), o gateway valida se você tem permissão (grupo ACL `external` ou `internal`) para acessar um recurso específico.
 
 **Como se faz:**
 ```bash
-deck gateway apply 04-seguridad-acl/kong.yaml
+deck gateway sync 04-seguridad-acl-opcional/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -180,12 +183,12 @@ curl -i http://localhost:8000/flights -H "apikey: my-internal-key"
 # Retorna 403 Forbidden
 ```
 
-### Exercício 5: Rate Limiting diferenciado (05-rate-limiting.yaml)
+### Exercício 5: **(Opcional)** Rate Limiting diferenciado (05-rate-limiting-opcional)
 **O que queremos mostrar:** Proteger o backend de abuso com cotas diferenciadas por consumidor: o usuário externo tem um limite de 5 requisições/minuto (demonstrável), o interno tem 3 (mas além disso é bloqueado pelo ACL ao tentar acessar `/flights`).
 
 **Como se faz:**
 ```bash
-deck gateway apply 05-rate-limiting/kong.yaml
+deck gateway sync 05-rate-limiting-opcional/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -195,12 +198,12 @@ for i in {1..7}; do curl -s -o /dev/null -w "Code: %{http_code}\n" http://localh
 ```
 *Você observará que as primeiras 5 requisições retornam `200 OK` e a partir da 6ª mudam para `429 Too Many Requests`.*
 
-### Exercício 6: Transformações e Observabilidade (06-transformaciones.yaml)
-**O que queremos mostrar:** Enriquecer as requisições para o backend e as respostas ao cliente alterando cabeçalhos dinamicamente, e injetar um ID de Correlação para facilitar o troubleshooting moderno.
+### Exercício 6: **(Opcional)** Transformações (06-transformaciones-opcional)
+**O que queremos mostrar:** Enriquecer as requisições para o backend e as respostas ao cliente alterando cabeçalhos dinamicamente,.
 
 **Como se faz:**
 ```bash
-deck gateway apply 06-transformaciones/kong.yaml
+deck gateway sync 06-transformaciones-opcional/kong.yaml
 ```
 
 **Impacto (Validação):**
@@ -208,33 +211,83 @@ Teste a rota de flights, observando os cabeçalhos de resposta (Response Transfo
 ```bash
 curl -i http://localhost:8000/flights -H "apikey: my-external-key"
 ```
-*Você deverá observar um novo cabeçalho `x-perceptiva: true` e o surgimento de `X-Kong-Request-Id` ou `x-correlation-id` gerado pelo gateway.*
+*Você deverá observar um novo cabeçalho `x-perceptiva: true`.*
 
-### Exercício 7: Exploração da Observabilidade Integral Remota
-**O que queremos mostrar:** Visualizar como as configurações globais que injetamos silenciosamente no Exercício 0 (File Log, Prometheus, OpenTelemetry e Loki HTTP Log) capturaram a telemetria de todo o laboratório.
 
-**Entendendo a captura passiva:**
-1. **Logs em File System:** Usando a variável previamente definida, inspecione os logs diretamente no contêiner com:
-   ```bash
-   docker exec -it $KONNECT_DATA_PLANE_NAME tail -f /tmp/kong-access.log
-   ```
-   *(Pressione `Ctrl+C` para sair).*
-2. **Traces e Logs Centralizados:** Os envios são automatizados pela rede para o stack LGTM.
-3. **Métricas no Prometheus:** O Kong expõe o endpoint em `http://localhost:8100/metrics`.
+### Exercício 7: Rastreabilidade com Correlation ID (07-correlation-id.yaml)
+**O que queremos demonstrar:** Injetar um ID único (Correlation ID) em cada solicitação para facilitar o rastreamento e a rastreabilidade através de microsserviços.
 
-**Como visualizar os resultados no Stack Externo (Grafana, Jaeger, Loki, Prometheus):**
-Como já iniciamos o stack integrado no Exercício 0, você só precisa se certificar de ter gerado o tráfego de teste e então:
-1. **Jaeger (Traces):** Acesse [http://localhost:16686](http://localhost:16686). No painel principal, em "Service", selecione `kong-api-gateway` e clique em "Find Traces". Você poderá ver o ciclo de vida completo de cada requisição de rede e os tempos de latência do upstream graças ao plugin OpenTelemetry.
+**Como fazer:**
+```bash
+deck gateway sync 07-correlation-id/kong.yaml
+```
+
+**Impacto (Validação):**
+Teste a API e verifique o surgimento do header injetado `x-correlation-id`.
+```bash
+curl -i http://localhost:8000/flights -H "apikey: my-external-key"
+```
+*Você observará o valor UUID retornado, o qual será chave para um troubleshooting rápido. Este mesmo ID viverá nos logs que revisaremos a seguir.*
+
+### Exercício 8: Exploração da Observabilidade Integral Remota
+**O que queremos mostrar:** Visualizar como as configurações globais (File Log, Prometheus e OpenTelemetry) capturaram a telemetria de todo o laboratório em tempo real.
+
+**Passo 1 — Aplicar a configuração de observabilidade completa:**
+```bash
+deck gateway sync 08-observabilidad/kong.yaml
+```
+
+**Passo 2 — Gerar tráfego misto para popular os dashboards:**
+> 💡 A partir do E08, o serviço `/flights` mantém Key Auth. Use a API key em todos os requests bem-sucedidos:
+> ⚠️ Se aparecer um `429` no final, é normal — o rate limit do App-External (20 req/min) pode estar acumulado de sessões anteriores. Aguarde 1 minuto e tente novamente.
+```bash
+# 15 requests bem-sucedidos (200) — margem segura abaixo do limite de 20/min
+for i in {1..15}; do
+  curl -s -o /dev/null -w "Code: %{http_code}\n" \
+    -H "apikey: my-external-key" http://localhost:8000/flights
+  sleep 0.2
+done
+
+# 10 requests sem key (401 — tráfego não autenticado)
+for i in {1..10}; do
+  curl -s -o /dev/null -w "Code: %{http_code}\n" http://localhost:8000/flights
+  sleep 0.1
+done
+
+# 10 requests no endpoint de debug (sem auth)
+for i in {1..10}; do
+  curl -s -o /dev/null -w "Code: %{http_code}\n" http://localhost:8000/debug/headers
+  sleep 0.1
+done
+```
+
+**Passo 3 — Inspecionar logs no Data Plane local:**
+```bash
+# O contêiner do Data Plane se chama kong_local_dp neste laboratório.
+# Se tiver dúvida, confirme com:
+docker ps --format '{{.Names}}' | grep kong
+
+# Ver logs de acesso em tempo real:
+docker exec -it kong_local_dp tail -f /tmp/kong-access.log
+```
+*(Pressione `Ctrl+C` para sair.)*
+
+**Passo 4 — Verificar métricas Prometheus pelo terminal:**
+```bash
+curl -s http://localhost:8100/metrics | grep kong_http_requests_total
+```
+
+**Passo 5 — Visualizar no Stack Externo (Grafana, Jaeger, Loki, Prometheus):**
+1. **Jaeger (Traces):** Acesse [http://localhost:16686](http://localhost:16686). Em "Service", selecione `kong-api-gateway` → **Find Traces**. Você verá o ciclo de vida completo de cada requisição com tempos de latência desagregados (execução de plugins vs upstream).
 2. **Grafana (Logs e Métricas):** Acesse [http://localhost:3000](http://localhost:3000) (Usuário/Senha: `admin` / `admin`).
-    - Vá para a seção **Explore** (ícone de bússola no painel esquerdo).
-    - Selecione o Data Source **Loki** no canto superior esquerdo.
-    - No painel de consulta (aba **Builder**), em **Label filters**, selecione o label `job`, e em `Select value` escolha `kong-gateway`.
-    - Faça clique no botão azul **Run query** no canto superior direito. Você verá uma lista com todos os logs JSON de suas requisições!
-    - Mude o Data Source para **Prometheus** para grafar métricas em tempo real explorando métricas como `kong_http_status` ou `kong_latency_bucket`.
+    - Vá para **Explore** (ícone de bússola no painel esquerdo).
+    - Selecione o Data Source **Loki**.
+    - Em **Label filters**, selecione `job` = `kong-gateway` → **Run query**. Você verá todos os logs JSON estruturados.
+    - Mude para o Data Source **Prometheus** e explore métricas como `kong_http_requests_total` ou `kong_latency_bucket`.
 
 ---
 
-### Exercício 08: Execução Automática da Bateria de Testes no Insomnia
+### Exercício 09: Execução Automática da Bateria de Testes no Insomnia
 **O que queremos mostrar:** Executar os Unit Tests automáticos programados pela equipe de QA, validando empiricamente que o Gateway do Kong protege a infraestrutura em cada cenário exigido.
 
 **Configurando os Testes (Exemplo de Script):**
@@ -267,7 +320,7 @@ Você visualizará um belo relatório no terminal onde os três testes validam o
 
 ---
 
-### Exercício 09: APIOps — Konnect Reference Platform Model
+### Exercício 10: APIOps — Konnect Reference Platform Model
 
 **O que queremos mostrar:** Implementar o ciclo de vida completo de APIs seguindo o modelo oficial do Kong: a **Konnect Reference Platform**. Este modelo define como as equipes de Platform Engineering e as equipes de API colaboram de forma declarativa usando `decK`, `Terraform` e `inso`, seguindo os mesmos 3 workflows que usa o projeto de referência **KongAirlines**.
 
@@ -284,10 +337,10 @@ A Reference Platform divide responsabilidades entre **dois papéis**:
 | **Platform Team** | Plugins globais (observabilidade, segurança, tráfego), ruleset de conformance, gestão de plataforma (Terraform) | `platform-team/` |
 | **API Teams** | OpenAPI Spec de sua API, plugins próprios (transformação, validação) | `flights-team/`, `bookings-team/`, etc. |
 
-A estrutura de arquivos resultante em `09-apiops/`:
+A estrutura de arquivos resultante em `10-apiops/`:
 
 ```
-09-apiops/
+10-apiops/
 │
 ├── platform-team/                    # Platform Team — plugins globais
 │   ├── plugins-observabilidade.yaml   # prometheus + file-log + opentelemetry
@@ -332,7 +385,7 @@ O pipeline executa **3 workflows em sequência**, com uma "aprovação" entre ca
 **Comando:**
 ```bash
 cd workshop-assets/
-./09-apiops/emulador-ci.sh
+./10-apiops/emulador-ci.sh
 ```
 
 ---
@@ -371,7 +424,7 @@ cd workshop-assets/
 Fora do escopo da Reference Platform decK, mas complementar: gerencia os recursos da plataforma Konnect de forma declarativa.
 
 ```bash
-cd 09-apiops/terraform
+cd 10-apiops/terraform
 export TF_VAR_konnect_token=$KONNECT_TOKEN
 terraform init
 terraform plan    # equivalente a "deck gateway diff" para a plataforma
@@ -457,17 +510,17 @@ OpenAPI Spec (cada equipe escreve)
 > **"O que acontece se alguém quebra a spec OpenAPI?"**
 > O Passo 1.1 (`inso lint spec`) bloqueia o pipeline no ponto mais cedo possível — antes de gerar qualquer configuração de Gateway. O custo de detectar o erro é zero: nada foi consumido, nada foi implantado. Este é o valor central do modelo **Design-First / Contract-First**.
 
-5. Mostre à audiência o arquivo `09-apiops/github-actions-declarativo.yml` para evidenciar como este pipeline se integra no GitHub Actions com os 3 workflows reais que usa o KongAirlines.
+5. Mostre à audiência o arquivo `10-apiops/github-actions-declarativo.yml` para evidenciar como este pipeline se integra no GitHub Actions com os 3 workflows reais que usa o KongAirlines.
 
 ---
 
-### Exercício 10: Clustering, Escalabilidade e Autodescoberta
+### Exercício 11: Clustering, Escalabilidade e Autodescoberta
 **O que queremos mostrar:** Demonstrar a robustez e imutabilidade da Infraestrutura do Kong. Vamos lançar um novo Data Plane (nó) simulando um evento de "Auto-Scaling" (escalonamento por alto tráfego) e provaremos que ele obtém sua configuração automaticamente e herda toda a observabilidade do Control Plane sem intervenção manual.
 
 **Como fazer:**
 1. Abra um terminal e lance o **segundo Data Plane** (que se conectará ao mesmo cluster na nuvem, mas em uma porta de destino diferente `8010` para não conflitar com o nó local original):
    ```bash
-   ./10-clustering/dp2.sh
+   ./11-clustering/dp2.sh
    ```
    *(Este comando usará os mesmos certificados mTLS, mas criará um contêiner chamado `kong_local_dp2`).*
 2. **Teste a Replicação Base:** Envie uma solicitação testando a nova porta `8010`:

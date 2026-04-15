@@ -1,0 +1,180 @@
+name: Kong APIOps Pipeline (Declarativo)
+
+# ============================================================================
+# KONG APIOPS PIPELINE — VERSIÓN DECLARATIVA
+# Reemplaza las llamadas curl directas (Fases 6-7) por Terraform
+#
+# Herramientas:
+#   - Fases 1-5: inso + deck (gateway config)
+#   - Fases 6-7: Terraform + Kong Konnect Provider (plataforma)
+#
+# Secrets requeridos en GitHub:
+#   KONNECT_PAT       → Personal Access Token
+#   KONNECT_CP_NAME   → Nombre del Control Plane (ej: "Local Gateway")
+# ============================================================================
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 1: GATEWAY CONFIG (decK + inso) — Fases 1-5
+  # ──────────────────────────────────────────────────────────────────────────
+  gateway-pipeline:
+    name: "Gateway Config (decK)"
+    runs-on: ubuntu-latest
+    env:
+      DECK_KONNECT_TOKEN: ${{ secrets.KONNECT_PAT }}
+      DECK_KONNECT_CONTROL_PLANE_NAME: ${{ secrets.KONNECT_CP_NAME }}
+      DECK_KONNECT_ADDR: "https://us.api.konghq.com"
+      DECK_ANALYTICS: "false"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install Inso CLI
+        run: npm install -g insomnia-inso
+
+      - name: Install decK CLI
+        run: |
+          curl -sL https://github.com/Kong/deck/releases/download/v1.38.0/deck_1.38.0_linux_amd64.tar.gz -o deck.tar.gz
+          tar -xf deck.tar.gz -C /tmp && sudo cp /tmp/deck /usr/local/bin/
+
+      # FASE 1 — Lint: validar el contrato OpenAPI (Design-First)
+      - name: "[FASE 1] Lint OpenAPI Spec"
+        run: inso lint spec "workshop-assets/insomnia/flights-api.yaml"
+        continue-on-error: true # error intencional en la spec para demo de QA
+
+      # FASE 2 — openapi2kong: generar config declarativa del Gateway
+      - name: "[FASE 2] Generate Kong Declarative Config"
+        run: |
+          deck file openapi2kong \
+            -s workshop-assets/insomnia/flights-api.yaml \
+            -o kong-generated.yaml
+
+      # FASE 3 — Validar el YAML generado
+      - name: "[FASE 3] Validate generated Kong config"
+        run: deck file validate kong-generated.yaml
+
+      # FASE 4 — Drift Detection: qué cambiaría en el Control Plane
+      - name: "[FASE 4] Diff Kong Gateway Configuration (Plan)"
+        run: deck gateway diff kong-generated.yaml
+        id: diff
+
+      # FASE 5 — Tests de integración/comportamiento
+      - name: "[FASE 5] Run Integration Tests (inso)"
+        run: |
+          inso run test "Bateria Pruebas Escenario 09" \
+            -e "Base Environment" \
+            -w workshop-assets/insomnia/Insomnia_Workspace.json
+
+      # Apply solo en push a main (después de que el PR fue aprobado)
+      - name: "Apply Gateway Config → Control Plane"
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: deck gateway sync kong-generated.yaml
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 2: PLATAFORMA (Terraform) — Fases 6-7
+  # Reemplaza ~300 líneas de curl por declarativo idempotente
+  # ──────────────────────────────────────────────────────────────────────────
+  platform-pipeline:
+    name: "Plataforma Konnect (Terraform)"
+    runs-on: ubuntu-latest
+    needs: gateway-pipeline # espera que el Gateway esté actualizado
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: workshop-assets/10-apiops/terraform
+
+    env:
+      TF_VAR_konnect_token: ${{ secrets.KONNECT_PAT }}
+      TF_VAR_control_plane_name: ${{ secrets.KONNECT_CP_NAME }}
+      TF_VAR_konnect_server_url: "https://us.api.konghq.com"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Setup Terraform (HashiCorp action oficial)
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      # FASE 6+7 — terraform init
+      - name: "[FASE 6-7] Terraform Init"
+        run: terraform init
+
+      # Plan — equivalente al "deck gateway diff" para la plataforma
+      - name: "[FASE 6-7] Terraform Plan (Diff de Plataforma)"
+        run: terraform plan -out=tfplan
+
+      # Apply — crea/actualiza API Products, Catalog, Portal en Konnect
+      - name: "[FASE 6-7] Terraform Apply (Plataforma)"
+        run: terraform apply -auto-approve tfplan
+
+      # Output — mostrar URL del portal en el summary del pipeline
+      - name: "Portal URL"
+        run: |
+          echo "## 🌐 Dev Portal" >> $GITHUB_STEP_SUMMARY
+          terraform output -raw portal_url >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # JOB 3 (PR only): Plan de Plataforma como comentario en el PR
+  # Útil para revisión: "qué cambiaría en el portal si mergeo esto"
+  # ──────────────────────────────────────────────────────────────────────────
+  platform-plan-pr:
+    name: "Terraform Plan (PR Review)"
+    runs-on: ubuntu-latest
+    needs: gateway-pipeline
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: workshop-assets/10-apiops/terraform
+
+    env:
+      TF_VAR_konnect_token: ${{ secrets.KONNECT_PAT }}
+      TF_VAR_control_plane_name: ${{ secrets.KONNECT_CP_NAME }}
+      TF_VAR_konnect_server_url: "https://us.api.konghq.com"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color 2>&1 | tee /tmp/tfplan.txt
+        continue-on-error: true
+
+      # Publicar el plan como comentario en el PR para revisión
+      - name: Post Plan to PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('/tmp/tfplan.txt', 'utf8');
+            const body = `## 🔍 Terraform Platform Plan\n\`\`\`hcl\n${plan.slice(0, 60000)}\n\`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });

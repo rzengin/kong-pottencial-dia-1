@@ -1,0 +1,36 @@
+# ============================================================================
+# PLATFORM TEAM — Plugins de Observabilidad (Globales)
+#
+# Gestionados por el Platform Team. Se inyectan en TODAS las APIs
+# mediante:  deck file merge kong-from-oas.yaml platform-team/plugins-observabilidad.yaml
+#
+# Equivale al rol de la API Platform Team en la Reference Platform de Kong:
+# https://developer.konghq.com/deck/apiops/
+# ============================================================================
+_format_version: "3.0"
+
+plugins:
+  # ── Métricas Prometheus ───────────────────────────────────────────────────
+  - name: prometheus
+    enabled: true
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+  # ── Log a archivo local (para Promtail → Loki) ───────────────────────────
+  - name: file-log
+    enabled: true
+    config:
+      path: /tmp/kong.log
+      reopen: false
+
+  # ── Trazas distribuidas via OpenTelemetry (→ Jaeger) ─────────────────────
+  - name: opentelemetry
+    enabled: true
+    config:
+      traces_endpoint: http://host.docker.internal:4318/v1/traces
+      resource_attributes:
+        service.name: kong-gateway
+        deployment.environment: workshop

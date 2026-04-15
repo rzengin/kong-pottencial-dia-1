@@ -5,7 +5,7 @@
 # Ejecutar desde: workshop-assets/
 # Uso: bash 00-setup/cleanup-konnect.sh
 #
-# Este script elimina los recursos creados por el Escenario 09 (APIOps):
+# Este script elimina los recursos creados por el Escenario 10 (APIOps):
 #   - Catalog Services en "Applications > Catalog > Services"
 #   - API Products "Kong Workshop — *" (y todas sus versiones/specs)
 #   - Dev Portal "Kong Workshop Portal"
@@ -44,7 +44,7 @@ if [ -z "$KONNECT_TOKEN" ]; then
   exit 1
 fi
 
-PORTAL_NAME="Kong Workshop — Portal Privado"
+PORTAL_NAME="Kong Workshop — Portal"
 
 echo "🧹 Limpiando recursos de Konnect para el workshop..."
 
@@ -220,5 +220,5 @@ else
 fi
 
 echo ""
-echo "✅ Limpieza completada. El Escenario 09 puede ejecutarse con estado limpio."
+echo "✅ Limpieza completada. El Escenario 10 puede ejecutarse con estado limpio."
 

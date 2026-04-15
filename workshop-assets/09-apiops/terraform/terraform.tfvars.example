@@ -1,7 +1,0 @@
-# Kong Konnect — Terraform (workshop values)
-# NO COMMITEAR — está en .gitignore
-# Copiar este archivo a terraform.tfvars y completar con tus valores
-
-konnect_token      = "TU_KONNECT_PAT_AQUI"
-konnect_server_url = "https://us.api.konghq.com"
-control_plane_name = "Local Gateway"

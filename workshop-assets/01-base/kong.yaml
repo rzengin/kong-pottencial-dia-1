@@ -1,4 +1,21 @@
 _format_version: "3.0"
+plugins:
+  - name: file-log
+    config:
+      path: /tmp/kong-access.log
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+  - name: opentelemetry
+    config:
+      traces_endpoint: http://host.docker.internal:4318/v1/traces
+      sampling_rate: 1.0
+      resource_attributes:
+        service.name: kong-api-gateway
+        os.name: linux
 services:
   - name: flights
     url: http://host.docker.internal:8080/flights

@@ -1,0 +1,87 @@
+openapi: "3.0.0"
+info:
+  title: Routes API
+  version: "1.0.0"
+  description: |
+    API de rutas y conexiones aéreas.
+    Expone el mapa de rutas disponibles, frecuencias de operación
+    y disponibilidad de asientos por segmento de vuelo.
+  contact:
+    name: Equipo Platform Engineering
+    email: platform@workshop.demo
+
+servers:
+  - url: https://api.workshop.demo
+    description: Entorno de producción (via Kong Gateway)
+
+paths:
+  /routes:
+    get:
+      summary: Listar rutas disponibles
+      operationId: listRoutes
+      description: Retorna todas las rutas activas con sus horarios y frecuencias.
+      parameters:
+        - name: apikey
+          in: header
+          required: true
+          schema:
+            type: string
+          description: API Key del consumer autorizado
+        - name: origin
+          in: query
+          required: false
+          schema:
+            type: string
+          example: GRU
+          description: Código IATA del aeropuerto de origen
+        - name: destination
+          in: query
+          required: false
+          schema:
+            type: string
+          example: LIS
+          description: Código IATA del aeropuerto de destino
+      responses:
+        "200":
+          description: Lista de rutas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+        "401":
+          description: No autorizado — API Key inválida o ausente
+        "429":
+          description: Límite de peticiones excedido
+
+components:
+  schemas:
+    Route:
+      type: object
+      required: [id, origin, destination, duration_minutes]
+      properties:
+        id:
+          type: string
+          example: "RT-GRU-LIS"
+        origin:
+          type: string
+          example: "GRU"
+          description: Código IATA aeropuerto origen
+        destination:
+          type: string
+          example: "LIS"
+          description: Código IATA aeropuerto destino
+        airline:
+          type: string
+          example: "Workshop Air"
+        duration_minutes:
+          type: integer
+          example: 660
+        frequency:
+          type: string
+          enum: [daily, weekly, seasonal]
+          example: daily
+        aircraft:
+          type: string
+          example: "Boeing 787-9"

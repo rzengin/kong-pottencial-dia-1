@@ -1,0 +1,83 @@
+openapi: "3.0.0"
+info:
+  title: Customers API
+  version: "1.0.0"
+  description: |
+    API de gestión de clientes y viajeros frecuentes.
+    Proporciona acceso al perfil, historial de vuelos y preferencias
+    de los pasajeros registrados en el programa de fidelización.
+  contact:
+    name: Equipo Platform Engineering
+    email: platform@workshop.demo
+
+servers:
+  - url: https://api.workshop.demo
+    description: Entorno de producción (via Kong Gateway)
+
+paths:
+  /customers:
+    get:
+      summary: Listar clientes
+      operationId: listCustomers
+      description: Retorna el directorio de clientes registrados en el sistema de fidelización.
+      parameters:
+        - name: apikey
+          in: header
+          required: true
+          schema:
+            type: string
+          description: API Key del consumer autorizado
+        - name: tier
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [silver, gold, platinum]
+          description: Filtrar por nivel de fidelización
+      responses:
+        "200":
+          description: Lista de clientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Customer'
+        "401":
+          description: No autorizado — API Key inválida o ausente
+        "403":
+          description: Prohibido — el consumer no tiene acceso a este recurso (ACL)
+        "429":
+          description: Límite de peticiones excedido
+
+components:
+  schemas:
+    Customer:
+      type: object
+      required: [id, name, email, tier]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "c1a2b3c4-d5e6-f7a8-b9c0-d1e2f3a4b5c6"
+        name:
+          type: string
+          example: "Carlos Mendoza"
+        email:
+          type: string
+          format: email
+          example: "carlos.mendoza@example.com"
+        tier:
+          type: string
+          enum: [silver, gold, platinum]
+          example: gold
+        total_flights:
+          type: integer
+          example: 42
+        preferred_seat:
+          type: string
+          example: "window"
+        joined_at:
+          type: string
+          format: date
+          example: "2021-03-15"

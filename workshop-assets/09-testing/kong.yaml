@@ -1,0 +1,7 @@
+_format_version: "3.0"
+
+# Este escenario representa el Ejercicio 08 (Ejecución Automática de Batería de Pruebas).
+# Al estar enfocado exclusivamente en la ejecución de tests (vía Insomnia o inso CLI) 
+# y validación del comportamiento de Kong, no requiere una mutación de la configuración 
+# o nuevos plugins en el Gateway. Por ende, este archivo se provee vacío con propósitos
+# exclusivamente pedagógicos y de secuencia en el laboratorio.

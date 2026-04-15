@@ -14,7 +14,7 @@
 |---|---|---|
 | `kong_local_dp` | 8000 (HTTP), 8443 (HTTPS), 8100 (status) | ✅ healthy |
 | `prism_mock` | 8080 | ✅ Up — Backend mock de la API de vuelos |
-| `httpbin` | 8081 | ✅ Up — Backend de echo para Escenario 07 |
+| `httpbin` | 8081 | ✅ Up — Backend de echo para Escenario 08 |
 | `grafana` | 3000 | ✅ Up — Dashboard de observabilidad |
 | `loki` | 3100 | ✅ Up — Almacenamiento de logs |
 | `jaeger` | 4317-4318, 16686 | ✅ Up — Tracing distribuido |
@@ -32,7 +32,7 @@ docker run -d --platform linux/amd64 --name prism_mock -p 8080:4010 \
   -v $(pwd)/insomnia/flights-api.yaml:/tmp/flights-api.yaml \
   stoplight/prism:5 mock -h 0.0.0.0 /tmp/flights-api.yaml -m false
 
-# Backend httpbin para escenario 07 (puerto 8081)
+# Backend httpbin para escenario 08 (puerto 8081)
 docker rm -f httpbin 2>/dev/null || true
 docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 ```
@@ -64,21 +64,8 @@ docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 
 ---
 
-### ✅ Escenario 02 — Restricción de Métodos HTTP
-**Archivo:** `02-metodos/kong.yaml`  
-**Plugin:** Restricción de métodos GET-only en `/flights`  
-
-| Check | Resultado | Nota |
-|---|---|---|
-| `GET /flights` → 200 | ℹ️ 401 en 2ª corrida | Misma causa que Esc.01 — key-auth activo |
-| `POST /flights` → 404 (método no permitido) | ✅ 404 | |
-
-> **ℹ️ Nota de ejecución secuencial:** En el taller, el Escenario 02 se ejecuta cuando aún no hay key-auth, por lo que `GET /flights` devuelve correctamente `200`. El plugin de métodos funciona correctamente como lo demuestra el `POST → 404`.
-
----
-
-### ✅ Escenario 03 — Autenticación por API Key
-**Archivo:** `03-seguridad-auth/kong.yaml`  
+### ✅ Escenario 02 — Autenticación por API Key
+**Archivo:** `02-seguridad-auth/kong.yaml`  
 **Plugin:** key-auth en servicio flights  
 **Consumers:** App-External (`my-external-key`), App-Internal (`my-internal-key`)
 
@@ -88,12 +75,26 @@ docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 | Con `apikey: my-external-key` → 200 | ✅ 200 | |
 | Con `apikey: my-internal-key` → 200 (sin ACL aún) | ℹ️ 403 en 2ª corrida | ACL del Esc.04 persiste (comportamiento aditivo esperado) |
 
-> **ℹ️ Nota de ejecución secuencial:** En el taller, el Escenario 03 se ejecuta antes del ACL, por lo que `my-internal-key` devuelve correctamente `200`. El 403 sólo ocurre al re-ejecutar sobre el estado final (con ACL ya activo).
+> **ℹ️ Nota de ejecución secuencial:** En el taller, el Escenario 02 se ejecuta antes del ACL, por lo que `my-internal-key` devuelve correctamente `200`. El 403 sólo ocurre al re-ejecutar sobre el estado final (con ACL ya activo).
+
+
+---
+
+### ✅ Escenario 03 — Restricción de Métodos HTTP
+**Archivo:** `03-metodos-opcional/kong.yaml`  
+**Plugin:** Restricción de métodos GET-only en `/flights`  
+
+| Check | Resultado | Nota |
+|---|---|---|
+| `GET /flights` con key externa → 200 | ✅ 200 | |
+| `POST /flights` con key externa → 404 (método no permitido) | ✅ 404 | |
+
+
 
 ---
 
 ### ✅ Escenario 04 — Control de Acceso por ACL
-**Archivo:** `04-seguridad-acl/kong.yaml`  
+**Archivo:** `04-seguridad-acl-opcional/kong.yaml`  
 **Plugin:** acl (allow: external) en servicio flights  
 **Grupos:** App-External → `external`, App-Internal → `internal`
 
@@ -105,7 +106,7 @@ docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 ---
 
 ### ✅ Escenario 05 — Rate Limiting Diferenciado
-**Archivo:** `05-rate-limiting/kong.yaml`  
+**Archivo:** `05-rate-limiting-opcional/kong.yaml`  
 **Plugin:** rate-limiting por consumer (local policy)  
 **Límites:** App-External: 5/min, App-Internal: 3/min  
 
@@ -122,18 +123,27 @@ docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 ---
 
 ### ✅ Escenario 06 — Transformación de Cabeceras
-**Archivo:** `06-transformaciones/kong.yaml`  
-**Plugins:** response-transformer, correlation-id  
+**Archivo:** `06-transformaciones-opcional/kong.yaml`  
+**Plugins:** response-transformer  
 
 | Check | Resultado |
 |---|---|
 | Header `x-perceptiva: true` presente en respuesta | ✅ Presente |
+
+---
+
+### ✅ Escenario 07 — Correlation ID
+**Archivo:** `07-correlation-id/kong.yaml`  
+**Plugins:** correlation-id  
+
+| Check | Resultado |
+|---|---|
 | Header `x-correlation-id: <uuid>` presente en respuesta | ✅ Presente |
 
 ---
 
-### ✅ Escenario 07 — Observabilidad Completa (Stack LGTM)
-**Archivo:** `07-observabilidad/kong.yaml`  
+### ✅ Escenario 08 — Observabilidad Completa (Stack LGTM)
+**Archivo:** `08-observabilidad/kong.yaml`  
 **Plugins:** opentelemetry (global), prometheus (global), file-log (global), http-log (global)  
 **Nuevo:** servicio `debug-headers` → httpbin (puerto 8081)  
 **Backends cambian:** /flights, /routes, /customers, /bookings → httpbin /anything/* (puerto 8081)
@@ -144,18 +154,18 @@ docker run -d --name httpbin -p 8081:80 kennethreitz/httpbin
 | `GET /debug/headers` → 200 (httpbin /headers) | ✅ 200 |
 | Métricas Prometheus disponibles en puerto 8100 | ✅ 6 series |
 
-**Notas sobre la arquitectura de Escenario 07:**  
+**Notas sobre la arquitectura de Escenario 08:**  
 El cambio a httpbin (en vez de Prism) permite mostrar los headers que Kong inyecta en cada request (x-correlation-id, traceparent, x-inter-env) ya que httpbin /anything devuelve el request completo como respuesta. Esto enriquece la narrativa pedagógica de observabilidad.
 
 ---
 
-### ✅ Escenario 08 — Testing Automatizado con inso CLI
+### ✅ Escenario 09 — Testing Automatizado con inso CLI
 **Archivo:** `08-testing/kong.yaml` (placeholder)  
-**Suite:** "Bateria Pruebas Escenario 08"  
+**Suite:** "Bateria Pruebas Escenario 09"  
 **Workspace:** `insomnia/Insomnia_Workspace.json`
 
 ```
-Bateria Pruebas Escenario 08
+Bateria Pruebas Escenario 09
   ✔ Debe retornar 200 con llave externa (597ms)
   ✔ Debe bloquear sin autenticacion (401)
   ✔ Rutas internas tienen Rate Limit (Spam - 429) (46ms)
@@ -169,7 +179,7 @@ Bateria Pruebas Escenario 08
 
 ---
 
-### ✅ Escenario 09 — APIOps / Pipeline CI Emulado
+### ✅ Escenario 10 — APIOps / Pipeline CI Emulado
 **Script:** `09-apiops/emulador-ci.sh`  
 **GitHub Actions equivalente:** `09-apiops/github-actions-demo.yml`
 
@@ -209,7 +219,7 @@ Bateria Pruebas Escenario 08
 
 ---
 
-### ✅ Escenario 10 — Clustering / Segundo Data Plane
+### ✅ Escenario 11 — Clustering / Segundo Data Plane
 **Script:** `10-clustering/dp2.sh`  
 **Contenedor:** `kong_local_dp2` — puerto 8010 (HTTP), 8453 (HTTPS), 8110 (status)
 

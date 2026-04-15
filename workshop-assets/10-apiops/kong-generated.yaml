@@ -1,0 +1,154 @@
+_format_version: "3.0"
+plugins:
+- config:
+    bandwidth_metrics: true
+    latency_metrics: true
+    status_code_metrics: true
+    upstream_health_metrics: true
+  enabled: true
+  name: prometheus
+- config:
+    path: /tmp/kong.log
+    reopen: false
+  enabled: true
+  name: file-log
+- config:
+    resource_attributes:
+      deployment.environment: workshop
+      service.name: kong-gateway
+    traces_endpoint: http://host.docker.internal:4318/v1/traces
+  enabled: true
+  name: opentelemetry
+services:
+- connect_timeout: 60000
+  host: api.workshop.demo
+  name: bookings-api
+  path: /
+  port: 443
+  protocol: https
+  read_timeout: 60000
+  routes:
+  - methods:
+    - GET
+    name: bookings-api_listbookings
+    paths:
+    - ~/bookings$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  tags:
+  - bookings-team
+  write_timeout: 60000
+- connect_timeout: 60000
+  host: api.workshop.demo
+  name: customers-api
+  path: /
+  port: 443
+  protocol: https
+  read_timeout: 60000
+  routes:
+  - methods:
+    - GET
+    name: customers-api_listcustomers
+    paths:
+    - ~/customers$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  tags:
+  - customers-team
+  write_timeout: 60000
+- connect_timeout: 60000
+  host: localhost
+  name: flights-api-qa-demo
+  path: /
+  port: 8080
+  protocol: http
+  read_timeout: 60000
+  routes:
+  - methods:
+    - POST
+    name: flights-api-qa-demo_createflight
+    paths:
+    - ~/flights$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  - methods:
+    - GET
+    name: flights-api-qa-demo_getbookings
+    paths:
+    - ~/bookings$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  - methods:
+    - GET
+    name: flights-api-qa-demo_getcustomers
+    paths:
+    - ~/customers$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  - methods:
+    - GET
+    name: flights-api-qa-demo_getflights
+    paths:
+    - ~/flights$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  - methods:
+    - GET
+    name: flights-api-qa-demo_getroutes
+    paths:
+    - ~/routes$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  tags:
+  - flights-team
+  write_timeout: 60000
+- connect_timeout: 60000
+  host: api.workshop.demo
+  name: routes-api
+  path: /
+  port: 443
+  protocol: https
+  read_timeout: 60000
+  routes:
+  - methods:
+    - GET
+    name: routes-api_listroutes
+    paths:
+    - ~/routes$
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 200
+    strip_path: false
+  tags:
+  - routes-team
+  write_timeout: 60000
